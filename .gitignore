@@ -59,9 +59,6 @@ build/
 out/
 .output/
 
-# Debug writing to files
-debug/
-
 # Framework caches
 .next/
 .nuxt/
@@ -75,7 +72,6 @@ debug/
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
-
 
 # ==========================================
 # .NET
@@ -95,6 +91,8 @@ obj/
 # Rider
 .idea/
 
+# ASP.NET local files
+Properties/launchSettings.json
 
 # ==========================================
 # VS Code
@@ -102,17 +100,17 @@ obj/
 
 .vscode/
 
-
 # ==========================================
 # Environment / secrets
 # ==========================================
 
+# API keys / tokens
+*.secret.json
+*.pem
+*.key
+
 # PSN authentication cache
 psnAuthCache.json
-
-# API keys / secrets
-*.secret.json
-
 
 # ==========================================
 # Generated application data
@@ -121,17 +119,15 @@ psnAuthCache.json
 # Generated PSN data
 output/
 
+# PSN service debug/cache
+psn-service/debug/
+
 # Generated JSON exports
 *.generated.json
 
-
-# ==========================================
-# OS files
-# ==========================================
-
-.DS_Store
-Thumbs.db
-
+# Temporary exports
+*.json.tmp
+*.tmp
 
 # ==========================================
 # Database
@@ -140,3 +136,31 @@ Thumbs.db
 *.db
 *.sqlite
 *.sqlite3
+
+# Database dumps
+*.sql
+*.dump
+
+# ==========================================
+# Docker
+# ==========================================
+
+docker-compose.override.yml
+.docker/
+
+# ==========================================
+# OS files
+# ==========================================
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==========================================
+# Temporary files
+# ==========================================
+
+*.bak
+*.swp
+*.swo
+*~

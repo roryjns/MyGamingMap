@@ -9,11 +9,13 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-builder.Services.AddSingleton<PSNServiceClient>();
+builder.Services.AddScoped<PSNService>();
+builder.Services.AddScoped<IGDBService>();
+builder.Services.AddScoped<AnalyticsService>();
+builder.Services.AddScoped<MapService>();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -21,8 +23,5 @@ if (app.Environment.IsDevelopment())
 }
 
 //app.UseHttpsRedirection();
-
-// Enable controller routes
 app.MapControllers();
-
 app.Run();

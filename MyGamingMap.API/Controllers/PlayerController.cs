@@ -5,15 +5,14 @@ namespace MyGamingMap.API.Controllers;
 
 [ApiController]
 [Route("api")]
-public class PlayerController(PSNServiceClient psnServiceClient) : ControllerBase
+public class PlayerController(MapService mapService) : ControllerBase
 {
-    private readonly PSNServiceClient _psnServiceClient = psnServiceClient;
+    private readonly MapService mapService = mapService;
 
-    [HttpGet("{username}/games")]
-    public async Task<IActionResult> Generate(string username)
+    [HttpGet("{username}/map")]
+    public async Task<IActionResult> GetMap(string username)
     {
-        Console.WriteLine($"GET request sent to api/{username}/games");
-        var games = await _psnServiceClient.GetPlayerGames(username);
-        return Ok(games);
+        var map = await mapService.GetMap(username);
+        return Ok(map);
     }
 }
