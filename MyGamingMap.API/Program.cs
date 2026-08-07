@@ -1,4 +1,6 @@
 using MyGamingMap.API.Services;
+using MyGamingMap.API.Data;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,8 +13,17 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddScoped<PSNService>();
 builder.Services.AddScoped<IGDBService>();
+builder.Services.AddScoped<DatabaseService>();
 builder.Services.AddScoped<AnalyticsService>();
 builder.Services.AddScoped<MapService>();
+
+builder.Services.AddDbContext<MyGamingMapContext>(options =>
+    options
+        .UseNpgsql(
+            builder.Configuration.GetConnectionString("DefaultConnection"),
+            npgsqlOptions =>
+                npgsqlOptions.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery))
+        .UseSnakeCaseNamingConvention());
 
 var app = builder.Build();
 

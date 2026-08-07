@@ -10,7 +10,8 @@ if (process.argv[2]) {
 
   try {
     const playerGames = await getPlayerGames(username);
-    console.log(JSON.stringify(playerGames))
+    if (playerGames == null) console.log(JSON.stringify([]));
+    else console.log(JSON.stringify(playerGames))
     process.exit(0);
   } catch (error) {
     console.error(error);
@@ -21,10 +22,30 @@ if (process.argv[2]) {
 export async function getPlayerGames(username: string) {
   const auth = await authorization();
   const accountId = await getUser(auth.accessToken, username);
-  const playData = await getUserPlayData(auth.accessToken, accountId);
-  const trophyData = await getUserTrophyData(auth.accessToken, accountId);
-  const playerGames = await mergePlayAndTrophyData(auth.accessToken, accountId, playData, trophyData);
-  return playerGames;
+
+  try {
+    let start = performance.now();
+    const playData = await getUserPlayData(auth.accessToken, accountId);
+    console.error(`getUserPlayData: ${(performance.now() - start).toFixed(0)} ms`);
+
+    start = performance.now();
+    const trophyData = await getUserTrophyData(auth.accessToken, accountId);
+    console.error(`getUserTrophyData: ${(performance.now() - start).toFixed(0)} ms`);
+
+    start = performance.now();
+    const playerGames = await mergePlayAndTrophyData(auth.accessToken, accountId, playData, trophyData);
+    console.error(`mergePlayAndTrophyData: ${(performance.now() - start).toFixed(0)} ms`);
+
+    return playerGames;
+  }
+  catch (error: any) {
+    if (error?.message?.includes("hidden his or her games")) {
+      console.error("User has hidden their games. Skipping profile.");
+      return [];
+    }
+
+    throw error;
+  }
 }
 
 async function saveAuthorization(auth: any) {
@@ -39,7 +60,7 @@ async function authorization() {
     console.error("Found cached authorisation file");
     const data = fs.readFileSync(AUTH_CACHE_PATH, "utf-8");
     let cachedAuthorization = JSON.parse(data);
-    const REFRESH_BUFFER = 10 * 60 * 1000; // 10 minutes
+    const REFRESH_BUFFER = 6 * 60 * 1000; // 8 minutes
     const expiresIn = cachedAuthorization.expiresAt - Date.now();
 
     if (expiresIn > REFRESH_BUFFER) {
@@ -57,9 +78,7 @@ async function authorization() {
     } catch (error) {
       console.error("Token refresh failed, falling back to NPSSO authentication");
     }
-  } else {
-    console.error("No cached authorisation found");
-  }
+  } else console.error("No cached authorisation found");
 
   console.error("Authenticating using NPSSO token...");
   const myNpsso = process.env.PSN_NPSSO;
@@ -79,11 +98,7 @@ async function authorization() {
 
 async function getUser(accessToken: string, username: string) {
   try {
-    const { profile } = await psn.getProfileFromUserName(
-      { accessToken },
-      username
-    );
-
+    const { profile } = await psn.getProfileFromUserName({ accessToken }, username);
     if (!profile?.accountId) throw new Error(`No account returned for ${username}`);
     console.error(`Successfully retrieved PSN profile for ${username}`);
     return profile.accountId;
@@ -91,13 +106,7 @@ async function getUser(accessToken: string, username: string) {
   catch (error: any) {
     console.error(`Failed to retrieve PSN profile for ${username}`);
 
-    if (error?.response) {
-      console.error("PSN API response error:", {
-        status: error.response.status,
-        data: error.response.data
-      });
-    }
-
+    if (error?.response) console.error("PSN API response error:", { status: error.response.status, data: error.response.data });
     else if (error?.message) console.error("Error:", error.message);
     else console.error("Unknown error:", error);
 
@@ -134,32 +143,40 @@ async function getUserPlayData(accessToken: string, accountId: string) {
     "SONY PICTURES CORE",
     "Twitch",
     "Tubi: Free Movies & TV",
-    "EA Play Hub"
+    "EA Play Hub",
+    "Demand 5",
+    "PlayStationHome",
+    "DAZN",
+    "Amazon Freevee",
+    "Animax",
+    "HBO Max",
+    "PlayStationVR Demo Disc",
+    "PlayStation Home"
   ]);
 
   console.error("Fetching play data...")
 
   while (true) { // 1 API call per 200 games
-    const response = await psn.getUserPlayedGames(
-      { accessToken },
-      accountId,
-      {
-        limit: 200,
-        offset: offset
-      }
+    const response = await retry(() =>
+      psn.getUserPlayedGames(
+        { accessToken },
+        accountId,
+        {
+          limit: 200,
+          offset
+        }
+      )
     );
 
     totalTitlesFound += response.titles.length;
-    const games = [];
 
     for (const game of response.titles) {
       if (excludedTitles.has(game.concept.name)) continue;
 
       const playHours = durationToHours(game.playDuration);
-
       const playCount = game.playCount > 0 ? game.playCount : (playHours > 0 ? 1 : 0);
 
-      games.push({
+      playData.push({
         titleId: game.titleId,
         name: normaliseName(game.concept.name),
         platform: titleIdToPlatform(game.titleId),
@@ -167,14 +184,10 @@ async function getUserPlayData(accessToken: string, accountId: string) {
         imageUrl: game.imageUrl,
         playHours,
         playCount,
-        averageSessionMinutes: (playHours * 60) / playCount,
         firstPlayed: extractDate(game.firstPlayedDateTime),
         lastPlayed: extractDate(game.lastPlayedDateTime)
       });
     }
-
-    // Add current page to all games
-    playData.push(...games);
 
     if (response.nextOffset == null) break;
 
@@ -195,33 +208,36 @@ async function getUserTrophyData(accessToken: string, accountId: string) {
 
   console.error("Fetching trophy data...")
 
-  while (true) { // 1 API call per 200 games
-    const response = await psn.getUserTitles(
-      { accessToken },
-      accountId,
-      {
-        limit: 200,
-        offset
-      }
+  while (true) { // 1 API call per 800 games
+    const response = await retry(() =>
+      psn.getUserTitles(
+        { accessToken },
+        accountId,
+        {
+          limit: 800,
+          offset
+        }
+      )
     );
 
-    totalTrophyTitlesFound += response.trophyTitles.length;
+    const trophyTitles = response.trophyTitles ?? [];
+
+    totalTrophyTitlesFound += trophyTitles.length;
 
     for (const game of response.trophyTitles) {
       // Ignore PS3 games with no earned trophies
       // PS3/PS Vita trophyGames never have a playedGame, so there's little to no player info to analyse without trophies
-      if ((game.trophyTitlePlatform === "PS3" || game.trophyTitlePlatform === "PSVITA")
-        && game.progress == 0) continue;
+      if ((game.trophyTitlePlatform === "PS3" || game.trophyTitlePlatform === "PSVITA") && game.progress == 0) continue;
 
       trophyData.push({
         name: normaliseName(game.trophyTitleName)
           .trim()
           .replace(/^\((.*)\)$/, "$1")
-          .replace(/\s*(Trophy Set set|Trophy Pack|Trophies|Set [12])\s*/gi, " ")
+          .replace(/\s*(Trophy Set|Trophy Pack|Trophies|trophies.|Trophy|Set [12])\s*/gi, " ")
           .replace(/\s*-\s*$/, "")
           .replace(/\s{2,}/g, " ")
           .trim(),
-        npCommunicationId: game.npCommunicationId,
+        npCommunicationId: game.npCommunicationId.replace(/_00$/i, ""),
         trophyTitleIconUrl: game.trophyTitleIconUrl,
         platform: game.trophyTitlePlatform,
         progress: game.progress,
@@ -243,16 +259,19 @@ async function getUserTrophyData(accessToken: string, accountId: string) {
 
 // 1 API call per 5 games
 async function getUserTrophiesForSpecificTitle(accessToken: string, accountId: string, titleIds: string) {
-  const response = await psn.getUserTrophiesForSpecificTitle(
-    { accessToken },
-    accountId,
-    {
-      npTitleIds: titleIds,
-      includeNotEarnedTrophyIds: false,
-    }
+
+  const response = await retry(() =>
+    psn.getUserTrophiesForSpecificTitle(
+      { accessToken },
+      accountId,
+      {
+        npTitleIds: titleIds,
+        includeNotEarnedTrophyIds: false,
+      }
+    )
   );
 
-  const games = response.titles.flatMap((title: any) =>
+  const games = (response.titles ?? []).flatMap((title: any) =>
     (title.trophyTitles ?? []).map((game: any) => ({
       name: game.trophyTitleName
         ?.replace(/\s+Trophies$/i, "")
@@ -260,8 +279,11 @@ async function getUserTrophiesForSpecificTitle(accessToken: string, accountId: s
         .trim() ?? null,
 
       sourceTitleId: title.npTitleId,
-      npCommunicationId: game.npCommunicationId,
-      trophyTitleIconUrl: game.trophyTitleIconUrl,
+
+      npCommunicationId: game.npCommunicationId
+        ?.replace(/_00$/i, "") ?? null,
+
+      trophyTitleIconUrl: game.trophyTitleIconUrl ?? null,
       platform: titleIdToPlatform(title.npTitleId),
       progress: game.progress ?? null,
       earnedTrophies: game.earnedTrophies ?? null,
@@ -305,12 +327,9 @@ async function mergePlayAndTrophyData(accessToken: string, accountId: string, pl
         trophyData: normalisedTrophies
       });
 
-      for (const trophy of matches) {
-        matchedTrophyGames.add(trophy.npCommunicationId);
-      }
-    } else {
-      unmatchedGames.push(game);
+      for (const trophy of matches) matchedTrophyGames.add(trophy.npCommunicationId);
     }
+    else unmatchedGames.push(game);
   }
 
   console.error(`First pass (exact name + platform): ${mergedGames.length}/${playedGames.length} games matched`);
@@ -322,9 +341,7 @@ async function mergePlayAndTrophyData(accessToken: string, accountId: string, pl
   const batches = [];
   const batchSize = 5;
 
-  for (let i = 0; i < unmatchedGames.length; i += batchSize) {
-    batches.push(unmatchedGames.slice(i, i + batchSize));
-  }
+  for (let i = 0; i < unmatchedGames.length; i += batchSize) batches.push(unmatchedGames.slice(i, i + batchSize));
 
   const trophyTitles = (
     await Promise.all(
@@ -351,9 +368,7 @@ async function mergePlayAndTrophyData(accessToken: string, accountId: string, pl
     const trophyData = trophyMap.get(game.titleId.toLowerCase()) ?? [];
 
     if (trophyData.length > 0) {
-      for (const trophy of trophyData) {
-        matchedTrophyGames.add(trophy.npCommunicationId);
-      }
+      for (const trophy of trophyData) matchedTrophyGames.add(trophy.npCommunicationId);
     }
 
     // Skip low playtime games with no trophy data - they are likely to be irrelevant
@@ -363,9 +378,7 @@ async function mergePlayAndTrophyData(accessToken: string, accountId: string, pl
     }
 
     const normalisedTrophies = normaliseTrophyData(trophyData);
-    const gameName = normalisedTrophies.length === 1
-      ? normalisedTrophies[0]?.name ?? game.name
-      : game.name;
+    const gameName = normalisedTrophies.length === 1 ? normalisedTrophies[0]?.name ?? game.name : game.name;
 
     mergedGames.push({
       ...game,
@@ -376,10 +389,7 @@ async function mergePlayAndTrophyData(accessToken: string, accountId: string, pl
 
   const gamesWithTrophies = mergedGames.filter(game => game.trophyData && game.trophyData.length > 0);
   console.error(`Second pass (PSN trophy lookup): ${gamesWithTrophies.length}/${playedGames.length} games matched`);
-
-  const unmatchedTrophyGames = userTitles.filter(
-    trophy => !matchedTrophyGames.has(trophy.npCommunicationId)
-  );
+  const unmatchedTrophyGames = userTitles.filter(trophy => !matchedTrophyGames.has(trophy.npCommunicationId));
 
   // Remove trophy only games with low progress - likely irrelevant
   const trophyOnlyGames = unmatchedTrophyGames.filter(
@@ -411,7 +421,6 @@ async function mergePlayAndTrophyData(accessToken: string, accountId: string, pl
       imageUrl: trophy.trophyTitleIconUrl,
       playHours: null,
       playCount: null,
-      averageSessionMinutes: null,
       firstPlayed: null,
       lastPlayed: trophy.lastTrophyEarned,
       trophyData: [
@@ -420,44 +429,11 @@ async function mergePlayAndTrophyData(accessToken: string, accountId: string, pl
     });
   }
 
-  mergedGames.sort((a, b) =>
-    a.name.replace(/^The\s+/i, "").localeCompare(
-      b.name.replace(/^The\s+/i, "")
-    )
-  );
-
+  mergedGames.sort((a, b) => a.name.replace(/^The\s+/i, "").localeCompare(b.name.replace(/^The\s+/i, "")));
   const playDataOnly = mergedGames.filter(game => (!game.trophyData || game.trophyData.length === 0) && game.playHours !== null);
-
-  /*
-  console.table(
-    playDataOnly
-      .map(result => ({
-        "Name": result.name,
-        "ID": result.titleId,
-        "Platform": result.platform,
-        "Playtime": result.playHours
-      }))
-  );
-  */
-
   const trophyDataOnly = mergedGames.filter(game => game.playHours === null && game.trophyData && game.trophyData.length > 0);
-
-  /*
-  console.table(
-    trophyDataOnly
-      .map(result => ({
-        "Name": result.name,
-        "NpCommunicationId": result.trophyData[0]?.npCommunicationId,
-        "Platform": result.trophyData[0]?.platform,
-        "Progress": result.trophyData[0]?.progress
-      }))
-  );
-  */
-
   const mergedWithTrophies = mergedGames.filter(game => game.trophyData && game.trophyData.length > 0 && game.playHours !== null);
-
   console.error(`Merge complete: ${mergedGames.length} games (${mergedWithTrophies.length} merged + ${playDataOnly.length} play data only + ${trophyDataOnly.length} trophy data only)`);
-
   await fs.promises.writeFile("./debug/playerGames.json", JSON.stringify(mergedGames, null, 2));
   return mergedGames;
 }
@@ -486,21 +462,12 @@ function mergeGamesWithSameTrophies(games: any[]) {
     existing.playCount = (existing.playCount ?? 0) + (game.playCount ?? 0);
 
     // Earliest first play
-    if (game.firstPlayed && (!existing.firstPlayed || game.firstPlayed < existing.firstPlayed)) {
+    if (game.firstPlayed && (!existing.firstPlayed || game.firstPlayed < existing.firstPlayed))
       existing.firstPlayed = game.firstPlayed;
-    }
 
     // Latest last play
-    if (game.lastPlayed && (!existing.lastPlayed || game.lastPlayed > existing.lastPlayed)) {
+    if (game.lastPlayed && (!existing.lastPlayed || game.lastPlayed > existing.lastPlayed))
       existing.lastPlayed = game.lastPlayed;
-    }
-  }
-
-  // Recalculate averages
-  for (const game of merged.values()) {
-    if (game.playCount > 0) {
-      game.averageSessionMinutes = (game.playHours * 60) / game.playCount;
-    }
   }
 
   return [...merged.values()];
@@ -518,8 +485,8 @@ function durationToHours(duration: string): number {
   return Number((hours + minutes / 60 + seconds / 3600).toFixed(2));
 }
 
-function extractDate(dateTime: string): string {
-  return dateTime.split("T")[0] ?? "";
+function extractDate(dateTime?: string | null): string | null {
+  return dateTime?.split("T")[0] ?? null;
 }
 
 function titleIdToPlatform(titleId: string): string | null {
@@ -532,8 +499,12 @@ function titleIdToPlatform(titleId: string): string | null {
 function normaliseName(name: string): string {
   return name
     .replace(/[™®©]/g, "")
-    .replace(/\s*\(?\s*(PS4|PS5|PS4\s*&\s*PS5|PlayStation\s*4|PlayStation\s*5|PlayStationVita)\s*\)?\s*$/gi, "")
-    .replace(/\s*:?\s*(Game of the Year Edition|Ultimate Edition|Deluxe Edition|Console Edition|PlayStation4 Edition|Playstation5 Edition|Premium Edition)\s*$/gi, "")
+    .replace(/\s*\(?\s*(PS4|PS5|PS4\s*&\s*PS5|PlayStationVita|PS Vita|PlayStation\s*3|PlayStation\s*4|PlayStation\s*5)\s*\)?/gi, "")
+    .replace(/\s*:?\s*(Game of the Year Edition|Ultimate Edition|Deluxe Edition|Deluxe Editiom|Collector's Edition|Limited Edition|Extended Edition|Console Edition|PlayStationVita Edition|PlayStation3 Edition|PlayStation4 Edition|Playstation5 Edition|Premium Edition|Special Edition)\s*$/gi, "")
+    .replace(/\s*\(?\s*(ASIA|EU|JA|NA|JP)\s*\)?$/gi, "")
+    .replace(/\s*:\s*Edition\s*$/gi, "")
+    .replace(/\s+editon$/gi, " edition")
+    .replace(/\s+HD\s*$/gi, "")
     .replace(/[‘’]/g, "'")
     .replace(/[“”]/g, '\'')
     .trim()
@@ -542,7 +513,7 @@ function normaliseName(name: string): string {
 function normaliseTrophyData(trophies: any[]) {
   return trophies.map(trophy => ({
     name: normaliseName(trophy.name),
-    npCommunicationId: trophy.npCommunicationId,
+    npCommunicationId: trophy.npCommunicationId.replace(/_00$/i, ""),
     trophyTitleIconUrl: trophy.trophyTitleIconUrl,
     platform: trophy.platform,
     progress: trophy.progress,
@@ -554,8 +525,26 @@ function normaliseTrophyData(trophies: any[]) {
 function getTrophyKey(game: any) {
   if (!game.trophyData || game.trophyData.length === 0) return null;
 
-  return game.trophyData
-    .map((trophy: any) => trophy.npCommunicationId)
-    .sort()
-    .join("|");
+  return game.trophyData.map((trophy: any) => trophy.npCommunicationId).sort().join("|");
+}
+
+async function retry<T>(operation: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      return await operation();
+    }
+    catch (err: any) {
+      const message = err?.message ?? "";
+
+      // Don't retry permanent PSN privacy errors
+      if (message.includes("hidden his or her games") || message.includes("hidden his or her trophies")) throw err;
+
+      if (attempt === 5) throw err;
+
+      console.error(`Retry ${attempt}/5`);
+      await new Promise(r => setTimeout(r, attempt * 5000));
+    }
+  }
+
+  throw new Error();
 }

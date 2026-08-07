@@ -1,14 +1,13 @@
-namespace MyGamingMap.API.Models;
+namespace MyGamingMap.API.Models.DTOs;
 
 // Game data fetched from the IGDB API and stored in the database
-// Doesn't include different editions or DLCs, only the main game
 public class IGDBGame
 {
-    public long? IGDB_ID { get; set; }
+    public long IGDB_Id { get; set; }
 
     public string Name { get; set; } = "";
 
-    public string? CoverUrl { get; set; }
+    public string? CoverId { get; set; }
 
     public List<string> Collections { get; set; } = [];
 
@@ -18,9 +17,11 @@ public class IGDBGame
 
     public List<string> GameModes { get; set; } = [];
 
-    public String? GameType { get; set; }
+    public string? GameType { get; set; }
 
     public List<string> Genres { get; set; } = [];
+
+    public List<string> ScreenshotIds { get; set; } = [];
 
     public List<string> Themes { get; set; } = [];
 
@@ -34,7 +35,7 @@ public class IGDBGame
 
     public string? ESRB_Rating { get; set; }
 
-    public string? PEGI_Rating { get; set; }
+    public int? PEGI_Rating { get; set; }
 
     public double? ReviewRating { get; set; }
 

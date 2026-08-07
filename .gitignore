@@ -129,6 +129,13 @@ psn-service/debug/
 *.json.tmp
 *.tmp
 
+# Scraping progress and generated datasets
+# These files contain scraped PlayStation usernames or generated benchmarking
+# data and are not committed to protect user privacy.
+psn_scrape_progress.txt
+psn_top_10000.json
+igdb_scrape_results.jsonl
+
 # ==========================================
 # Database
 # ==========================================
@@ -137,9 +144,10 @@ psn-service/debug/
 *.sqlite
 *.sqlite3
 
-# Database dumps
-*.sql
+# Database backups
 *.dump
+*.backup
+database_backups/
 
 # ==========================================
 # Docker

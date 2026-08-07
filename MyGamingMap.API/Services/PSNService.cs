@@ -1,4 +1,4 @@
-using MyGamingMap.API.Models;
+using MyGamingMap.API.Models.DTOs;
 using System.Diagnostics;
 using System.Text.Json;
 

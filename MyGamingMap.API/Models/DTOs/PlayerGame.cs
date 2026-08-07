@@ -1,4 +1,4 @@
-namespace MyGamingMap.API.Models;
+namespace MyGamingMap.API.Models.DTOs;
 
 // The player's PSN data for a game
 public class PlayerGame
@@ -18,8 +18,6 @@ public class PlayerGame
     public double? PlayHours { get; set; }
 
     public int? PlayCount { get; set; }
-
-    public double? AverageSessionMinutes { get; set; }
 
     public DateOnly? FirstPlayed { get; set; }
 

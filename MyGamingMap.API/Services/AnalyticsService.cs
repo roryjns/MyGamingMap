@@ -1,4 +1,4 @@
-using MyGamingMap.API.Models;
+using MyGamingMap.API.Models.DTOs;
 
 namespace MyGamingMap.API.Services;
 
