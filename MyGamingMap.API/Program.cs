@@ -11,11 +11,13 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.AddScoped<PlayerService>();
 builder.Services.AddScoped<PSNService>();
 builder.Services.AddScoped<IGDBService>();
 builder.Services.AddScoped<DatabaseService>();
 builder.Services.AddScoped<AnalyticsService>();
-builder.Services.AddScoped<MapService>();
+builder.Services.AddScoped<PSNAnalyticsService>();
+builder.Services.AddScoped<IGDBAnalyticsService>();
 
 builder.Services.AddDbContext<MyGamingMapContext>(options =>
     options

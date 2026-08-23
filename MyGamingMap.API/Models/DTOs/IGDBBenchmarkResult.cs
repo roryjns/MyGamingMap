@@ -1,6 +1,6 @@
 namespace MyGamingMap.API.Models.DTOs;
 
-public class IGDBScrapeResult
+public class IGDBBenchmarkResult
 {
     // Current profile
     public int ProfileGames { get; init; }

@@ -11,17 +11,15 @@ public class PlayerGame
 
     public int? ConceptId { get; set; }
 
-    public string? Service { get; set; }
-
     public string? ImageUrl { get; set; }
 
     public double? PlayHours { get; set; }
 
     public int? PlayCount { get; set; }
 
-    public DateOnly? FirstPlayed { get; set; }
+    public DateTime? FirstPlayed { get; set; }
 
-    public DateOnly? LastPlayed { get; set; }
+    public DateTime? LastPlayed { get; set; }
 
     public List<TrophyData> TrophyData { get; set; } = [];
 }
@@ -38,10 +36,14 @@ public class TrophyData
 
     public int Progress { get; set; }
 
-    public EarnedTrophies EarnedTrophies { get; set; } = new();
+    public TrophyCounts EarnedTrophies { get; set; } = new();
+
+    public TrophyCounts DefinedTrophies { get; set; } = new();
+
+    public DateTime? LastTrophyEarned { get; set; }
 }
 
-public class EarnedTrophies
+public class TrophyCounts
 {
     public int Bronze { get; set; }
     public int Silver { get; set; }

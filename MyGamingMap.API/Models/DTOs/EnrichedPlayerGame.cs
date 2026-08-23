@@ -6,5 +6,5 @@ public class EnrichedPlayerGame
 {
     public PlayerGame PlayerGame { get; set; } = null!;
 
-    public IGDBGame IGDBGame { get; set; } = null!;
+    public IGDBGame? IGDBGame { get; set; } = null!;
 }

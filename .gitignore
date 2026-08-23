@@ -132,9 +132,11 @@ psn-service/debug/
 # Scraping progress and generated datasets
 # These files contain scraped PlayStation usernames or generated benchmarking
 # data and are not committed to protect user privacy.
-psn_scrape_progress.txt
 psn_top_10000.json
 igdb_scrape_results.jsonl
+psn_scrape_progress.txt
+benchmark_results.jsonl
+benchmark_progress.txt
 
 # ==========================================
 # Database

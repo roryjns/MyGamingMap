@@ -3,7 +3,7 @@ using IGDB;
 using IGDB.Models;
 using Polly.RateLimit;
 using System.Diagnostics;
-using System.Text.RegularExpressions;
+using System.Text.Json;
 
 namespace MyGamingMap.API.Services;
 
@@ -75,24 +75,47 @@ public class IGDBService
         igdb = IGDBClient.CreateWithDefaults(clientId, clientSecret);
     }
 
-    public async Task<IGDBScrapeResult> GetIGDBGames(List<PlayerGame> playerGames)
+    private async Task<IGDBMatchingResult> GetIGDBGamesInternal(List<PlayerGame> playerGames)
     {
         var stopwatch = Stopwatch.StartNew();
 
         // Stage 1: Remove known failures
         var failedLookupKeys = await databaseService.GetFailedLookupKeys();
         var originalPlayerGameCount = playerGames.Count;
-        playerGames = [.. playerGames.Where(pg => !failedLookupKeys.Contains($"{pg.Name}|{pg.Platform}"))];
-        var skippedFailedLookups = originalPlayerGameCount - playerGames.Count;
+        var previouslyFailedGames = playerGames
+            .Where(pg =>
+                failedLookupKeys.Contains(
+                    $"{pg.Name}|{pg.Platform}"
+                )
+            )
+            .ToList();
+
+        var gamesToLookup = playerGames
+            .Where(pg =>
+                !failedLookupKeys.Contains(
+                    $"{pg.Name}|{pg.Platform}"
+                )
+            )
+            .ToList();
+
+        var skippedFailedLookups = previouslyFailedGames.Count;
 
         Console.WriteLine($"Skipped failed lookups: {skippedFailedLookups}/{originalPlayerGameCount}");
 
-        int databaseHits = 0;
-        int nameLookups = 0;
-        int conceptLookups = 0;
-        int unmatchedGames = 0;
+        var enrichedGames = new List<EnrichedPlayerGame>();
 
-        var igdbGames = new List<IGDBGame>();
+        // Previously failed games are still included,
+        // but with no IGDB match.
+        foreach (var playerGame in previouslyFailedGames)
+        {
+            enrichedGames.Add(
+                new EnrichedPlayerGame
+                {
+                    PlayerGame = playerGame,
+                    IGDBGame = null
+                }
+            );
+        }
 
         using var concurrencyLimiter = new SemaphoreSlim(6);
 
@@ -110,33 +133,46 @@ public class IGDBService
             }
         }
 
+
+        int databaseHits = 0;
+        int nameLookups = 0;
+        int conceptLookups = 0;
+        int unmatchedGames = 0;
+
         // Stage 2: Database mapping lookup
         var databaseMatches = new List<(PlayerGame PlayerGame, long IGDBId)>();
         var unmatchedAfterDatabase = new List<PlayerGame>();
 
-        // Find existing mappings
-        foreach (var playerGame in playerGames)
+        foreach (var playerGame in gamesToLookup)
         {
             var igdbId = await databaseService.GetIGDBId(playerGame.ConceptId, playerGame.TrophyData.Select(t => t.NpCommunicationId));
             if (igdbId is long id) databaseMatches.Add((playerGame, igdbId.Value));
             else unmatchedAfterDatabase.Add(playerGame);
         }
 
-        // Load matched games
         var databaseGameIds = databaseMatches.Select(x => x.IGDBId).Distinct().ToList();
         var databaseGames = await databaseService.GetGamesByIGDBIds(databaseGameIds);
 
-        databaseHits = 0;
-
-        // Convert to IGDB DTO games
         foreach (var mapping in databaseMatches)
         {
             if (databaseGames.TryGetValue(mapping.IGDBId, out var game))
             {
-                igdbGames.Add(ConvertToIGDBGame(game));
+                enrichedGames.Add(
+                    new EnrichedPlayerGame
+                    {
+                        PlayerGame = mapping.PlayerGame,
+                        IGDBGame = ConvertToIGDBGame(game)
+                    }
+                );
+
                 databaseHits++;
             }
-            else unmatchedAfterDatabase.Add(mapping.PlayerGame);
+            else
+            {
+                unmatchedAfterDatabase.Add(
+                    mapping.PlayerGame
+                );
+            }
         }
 
         Console.WriteLine($"Matched from database: {databaseHits}/{originalPlayerGameCount}");
@@ -157,8 +193,15 @@ public class IGDBService
         foreach (var result in matchedByName)
         {
             await databaseService.SaveGame(result.IGDBGame!.RawGame);
-            await databaseService.SaveGameMapping(result.PlayerGame, result.IGDBGame!.Game.IGDB_Id);
-            igdbGames.Add(result.IGDBGame.Game);
+            await databaseService.SaveGameMapping(result.PlayerGame, result.IGDBGame.Game.IGDB_Id);
+
+            enrichedGames.Add(
+                new EnrichedPlayerGame
+                {
+                    PlayerGame = result.PlayerGame,
+                    IGDBGame = result.IGDBGame.Game
+                }
+            );
         }
 
         var unmatchedAfterName = nameLookupResults
@@ -166,67 +209,157 @@ public class IGDBService
             .Select(r => r.PlayerGame)
             .ToList();
 
-        foreach (var playerGame in unmatchedAfterName.Where(g => g.ConceptId == null)) await databaseService.SaveFailedLookup(playerGame);
+        foreach (var playerGame in unmatchedAfterName.Where(g => g.ConceptId == null))
+            await databaseService.SaveFailedLookup(playerGame);
 
         var noConceptId = unmatchedAfterName.Count(g => g.ConceptId == null);
         var hasConceptId = unmatchedAfterName.Count(g => g.ConceptId != null);
 
         Console.WriteLine($"Matched from name lookup: {matchedByName.Count}/{originalPlayerGameCount}");
+
         Console.WriteLine(
             $"Given up after name lookup (no conceptId): " +
             $"{noConceptId}/{originalPlayerGameCount} " +
             $"({(double)noConceptId / originalPlayerGameCount:P1})");
 
+        // These cannot proceed to ConceptId lookup
+        foreach (var playerGame in unmatchedAfterName.Where(g => g.ConceptId == null))
+        {
+            await databaseService.SaveFailedLookup(playerGame);
+
+            enrichedGames.Add(
+                new EnrichedPlayerGame
+                {
+                    PlayerGame = playerGame,
+                    IGDBGame = null
+                }
+            );
+        }
+
         // Stage 4: ConceptId lookups
-        var uniqueConceptLookups = unmatchedAfterName
+        var conceptLookupGroups = unmatchedAfterName
             .Where(g => g.ConceptId.HasValue)
             .GroupBy(g => new
             {
                 g.ConceptId,
                 g.Platform
             })
-            .Select(g => g.First())
             .ToList();
 
-        conceptLookups = uniqueConceptLookups.Count;
+        conceptLookups = conceptLookupGroups.Count;
 
-        var conceptLookupTasks = uniqueConceptLookups.Select(async playerGame => new
+        var conceptLookupTasks = conceptLookupGroups.Select(async group => new
         {
-            PlayerGame = playerGame,
-            IGDBGame = await LookupByConceptId(playerGame.ConceptId!.Value, playerGame.Platform)
+            PlayerGames = group.ToList(),
+
+            IGDBGame = await LookupByConceptId(
+                group.Key.ConceptId!.Value,
+                group.Key.Platform
+            )
         });
 
         var conceptLookupResults = await Task.WhenAll(conceptLookupTasks);
 
         var matchedByConceptId = conceptLookupResults.Where(r => r.IGDBGame != null).ToList();
 
-        foreach (var result in matchedByConceptId)
+        foreach (var result in conceptLookupResults.Where(r => r.IGDBGame != null))
         {
-            await databaseService.SaveGame(result.IGDBGame!.RawGame);
-            await databaseService.SaveGameMapping(result.PlayerGame, result.IGDBGame!.Game.IGDB_Id);
-            igdbGames.Add(result.IGDBGame.Game);
+            await databaseService.SaveGame(
+                result.IGDBGame!.RawGame
+            );
+
+            foreach (var playerGame in result.PlayerGames)
+            {
+                await databaseService.SaveGameMapping(
+                    playerGame,
+                    result.IGDBGame.Game.IGDB_Id
+                );
+
+                enrichedGames.Add(
+                    new EnrichedPlayerGame
+                    {
+                        PlayerGame = playerGame,
+                        IGDBGame = result.IGDBGame.Game
+                    }
+                );
+            }
         }
 
-        var failedConceptLookups = conceptLookupResults.Where(r => r.IGDBGame == null).Select(r => r.PlayerGame).ToList();
+        foreach (var result in conceptLookupResults.Where(r => r.IGDBGame == null))
+        {
+            foreach (var playerGame in result.PlayerGames)
+            {
+                await databaseService.SaveFailedLookup(playerGame);
 
-        foreach (var playerGame in failedConceptLookups) await databaseService.SaveFailedLookup(playerGame);
+                enrichedGames.Add(
+                    new EnrichedPlayerGame
+                    {
+                        PlayerGame = playerGame,
+                        IGDBGame = null
+                    }
+                );
+            }
+        }
 
+        // Final statistics
         unmatchedGames = originalPlayerGameCount - databaseHits - matchedByName.Count - matchedByConceptId.Count;
 
         Console.WriteLine($"Matched from conceptId lookup: {matchedByConceptId.Count}/{hasConceptId} ({(double)matchedByConceptId.Count / hasConceptId:P1})");
         Console.WriteLine($"Given up after conceptId lookup: {unmatchedGames}/{originalPlayerGameCount} ({(double)unmatchedGames / originalPlayerGameCount:P1})");
 
+        foreach (var enrichedGame in enrichedGames)
+        {
+            // If this PlayerGame has exactly one trophy set, its current name is based on the trophy set name.
+            // Prefer the IGDB game's name if it exists.
+            if (enrichedGame.PlayerGame.TrophyData.Count == 1 && enrichedGame.IGDBGame != null)
+                enrichedGame.PlayerGame.Name = enrichedGame.IGDBGame.Name;
+
+            if (enrichedGame.IGDBGame?.CoverId != null)
+                enrichedGame.PlayerGame.ImageUrl = enrichedGame.IGDBGame.CoverId;
+        }
+
         stopwatch.Stop();
 
-        return new IGDBScrapeResult
+        var benchmarkResult =
+        new IGDBBenchmarkResult
         {
             ProfileGames = originalPlayerGameCount,
             DatabaseHits = databaseHits,
             NameLookups = nameLookups,
             ConceptIdLookups = conceptLookups,
+            UnmatchedGames = unmatchedGames,
             ProcessingTime = stopwatch.Elapsed,
-            UnmatchedGames = unmatchedGames
         };
+
+        return new IGDBMatchingResult
+        {
+            EnrichedGames = enrichedGames,
+            BenchmarkResult = benchmarkResult
+        };
+    }
+
+    public async Task<List<EnrichedPlayerGame>> GetEnrichedGames(List<PlayerGame> playerGames)
+    {
+        var result = await GetIGDBGamesInternal(playerGames);
+
+        await File.WriteAllTextAsync(
+            "enriched_games.json",
+            JsonSerializer.Serialize(
+                result.EnrichedGames,
+                new JsonSerializerOptions
+                {
+                    WriteIndented = true
+                }
+            )
+        );
+
+        return result.EnrichedGames;
+    }
+
+    public async Task<IGDBBenchmarkResult> GetIGDBGamesBenchmark(List<PlayerGame> playerGames)
+    {
+        var result = await GetIGDBGamesInternal(playerGames);
+        return result.BenchmarkResult;
     }
 
     private async Task<IGDBGameResult?> LookupByName(string Name, string Platform)
@@ -544,22 +677,103 @@ public class IGDBService
     {
         var normalised = name.ToLowerInvariant();
 
-        // Remove common suffixes/variants
-        normalised = Regex.Replace(
-            normalised,
-            @"(:\s*the game\b|\s+(hd|dx|ps\s*vita)|\s+(deluxe|gold|complete|definitive|digital ultimate|
-            ultimate evil|game of the year|goty|collector'?s|legendary|premium|special|enhanced|ultimate|
-            console|arena|dawn|rustless|intruders)\s+edition)\s*$",
-            "");
+        // Japanese punctuation variants
+        normalised = normalised
+            .Replace("～", "-")
+            .Replace("　", " ")
+            .Replace("！", "!")
+            .Replace("？", "?");
+
+        // Equivalent conjunctions
+        // "Ratchet & Clank" == "Ratchet and Clank"
+        normalised = normalised
+            .Replace("&", " and ")
+            .Replace("+", " and ");
+
+        // Remove apostrophes
+        // "Collector's" == "Collectors"
+        // "Assassin's" == "Assassins"
+        normalised = normalised
+            .Replace("'", "")
+            .Replace("’", "");
 
         // Normalise separators
-        normalised = Regex.Replace(normalised, @"[:\-–—]+", " ");
+        normalised = normalised
+            .Replace(":", " ")
+            .Replace("-", " ")
+            .Replace("–", " ")
+            .Replace("—", " ");
 
-        // Collapse whitespace
-        normalised = Regex.Replace(normalised, @"\s+", " ");
+        // Collapse whitespace before suffix checking
+        normalised = string.Join(
+            " ",
+            normalised.Split(
+                ' ',
+                StringSplitOptions.RemoveEmptyEntries
+            )
+        );
 
-        // Japanese punctuation variants
-        normalised = normalised.Replace("～", "-").Replace("　", " ").Replace("！", "!").Replace("？", "?");
+        // Remove ": the game"
+        if (normalised.EndsWith(" the game")) normalised = normalised[..^9].Trim();
+
+        // Remove simple suffixes
+        string[] suffixes =
+        [
+            " hd",
+            " dx",
+            " ps vita"
+        ];
+
+        foreach (var suffix in suffixes)
+        {
+            if (normalised.EndsWith(suffix))
+            {
+                normalised = normalised[..^suffix.Length].Trim();
+                break;
+            }
+        }
+
+        // Remove edition variants
+        string[] editions =
+        [
+            " deluxe edition",
+            " gold edition",
+            " complete edition",
+            " definitive edition",
+            " digital ultimate edition",
+            " ultimate evil edition",
+            " game of the year edition",
+            " goty edition",
+            " collectors edition",
+            " legendary edition",
+            " premium edition",
+            " special edition",
+            " enhanced edition",
+            " ultimate edition",
+            " console edition",
+            " arena edition",
+            " dawn edition",
+            " rustless edition",
+            " intruders edition"
+        ];
+
+        foreach (var edition in editions)
+        {
+            if (normalised.EndsWith(edition))
+            {
+                normalised = normalised[..^edition.Length].Trim();
+                break;
+            }
+        }
+
+        // Collapse whitespace again
+        normalised = string.Join(
+            " ",
+            normalised.Split(
+                ' ',
+                StringSplitOptions.RemoveEmptyEntries
+            )
+        );
 
         return normalised.Trim();
     }

@@ -5,21 +5,21 @@ namespace MyGamingMap.API.Controllers;
 
 [ApiController]
 [Route("api")]
-public class PlayerController(MapService mapService) : ControllerBase
+public class PlayerController(PlayerService playerService) : ControllerBase
 {
-    private readonly MapService mapService = mapService;
+    private readonly PlayerService playerService = playerService;
     
     [HttpGet("{username}/map")]
     public async Task<IActionResult> GetMap(string username)
     {
-        var map = await mapService.GetMap(username);
+        var map = await playerService.GetMap(username);
         return Ok(map);
     }
 
-    [HttpPost("scrape-igdb")]
-    public async Task<IActionResult> ScrapeIGDB()
+    [HttpPost("benchmark-test")]
+    public async Task<IActionResult> BenchmarkTest()
     {
-        await mapService.ScrapeIGDB();
+        await playerService.BenchmarkTest();
         return Ok();
     }
 }

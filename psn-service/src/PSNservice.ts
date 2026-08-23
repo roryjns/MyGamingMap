@@ -21,9 +21,12 @@ if (process.argv[2]) {
 
 export async function getPlayerGames(username: string) {
   const auth = await authorization();
-  const accountId = await getUser(auth.accessToken, username);
 
   try {
+    const user = await getUser(auth.accessToken, username);
+    const accountId = user.accountId;
+    const isOwnProfile = user.username.toLowerCase() === "me" || user.username.toLowerCase() === "eternitype_";
+
     let start = performance.now();
     const playData = await getUserPlayData(auth.accessToken, accountId);
     console.error(`getUserPlayData: ${(performance.now() - start).toFixed(0)} ms`);
@@ -39,6 +42,11 @@ export async function getPlayerGames(username: string) {
     return playerGames;
   }
   catch (error: any) {
+    if (error?.message?.includes("User not found")) {
+      console.error("User cannot be found. Skipping profile.");
+      return [];
+    }
+
     if (error?.message?.includes("hidden his or her games")) {
       console.error("User has hidden their games. Skipping profile.");
       return [];
@@ -100,8 +108,13 @@ async function getUser(accessToken: string, username: string) {
   try {
     const { profile } = await psn.getProfileFromUserName({ accessToken }, username);
     if (!profile?.accountId) throw new Error(`No account returned for ${username}`);
-    console.error(`Successfully retrieved PSN profile for ${username}`);
-    return profile.accountId;
+    console.error(`Successfully retrieved PSN profile for ${profile.onlineId}`);
+
+    return {
+      accountId: profile.accountId,
+      username: profile.onlineId,
+      avatarUrls: profile.avatarUrls[0]?.avatarUrl
+    };
   }
   catch (error: any) {
     console.error(`Failed to retrieve PSN profile for ${username}`);
@@ -110,7 +123,7 @@ async function getUser(accessToken: string, username: string) {
     else if (error?.message) console.error("Error:", error.message);
     else console.error("Unknown error:", error);
 
-    throw new Error(`Unable to retrieve PSN user: ${username}`);
+    throw error;
   }
 }
 
@@ -184,8 +197,8 @@ async function getUserPlayData(accessToken: string, accountId: string) {
         imageUrl: game.imageUrl,
         playHours,
         playCount,
-        firstPlayed: extractDate(game.firstPlayedDateTime),
-        lastPlayed: extractDate(game.lastPlayedDateTime)
+        firstPlayed: game.firstPlayedDateTime,
+        lastPlayed: game.lastPlayedDateTime
       });
     }
 
@@ -224,7 +237,7 @@ async function getUserTrophyData(accessToken: string, accountId: string) {
 
     totalTrophyTitlesFound += trophyTitles.length;
 
-    for (const game of response.trophyTitles) {
+    for (const game of trophyTitles) {
       // Ignore PS3 games with no earned trophies
       // PS3/PS Vita trophyGames never have a playedGame, so there's little to no player info to analyse without trophies
       if ((game.trophyTitlePlatform === "PS3" || game.trophyTitlePlatform === "PSVITA") && game.progress == 0) continue;
@@ -242,7 +255,8 @@ async function getUserTrophyData(accessToken: string, accountId: string) {
         platform: game.trophyTitlePlatform,
         progress: game.progress,
         earnedTrophies: game.earnedTrophies,
-        lastTrophyEarned: extractDate(game.lastUpdatedDateTime),
+        definedTrophies: game.definedTrophies,
+        lastTrophyEarned: game.lastUpdatedDateTime,
       });
     }
 
@@ -273,21 +287,21 @@ async function getUserTrophiesForSpecificTitle(accessToken: string, accountId: s
 
   const games = (response.titles ?? []).flatMap((title: any) =>
     (title.trophyTitles ?? []).map((game: any) => ({
-      name: game.trophyTitleName
-        ?.replace(/\s+Trophies$/i, "")
-        .replace(/[™®©]/g, "")
-        .trim() ?? null,
-
+      name: normaliseName(game.trophyTitleName)
+        .trim()
+        .replace(/^\((.*)\)$/, "$1")
+        .replace(/\s*(Trophy Set|Trophy Pack|Trophies|trophies.|Trophy|Set [12])\s*/gi, " ")
+        .replace(/\s*-\s*$/, "")
+        .replace(/\s{2,}/g, " ")
+        .trim(),
       sourceTitleId: title.npTitleId,
-
-      npCommunicationId: game.npCommunicationId
-        ?.replace(/_00$/i, "") ?? null,
-
+      npCommunicationId: game.npCommunicationId?.replace(/_00$/i, ""),
       trophyTitleIconUrl: game.trophyTitleIconUrl ?? null,
       platform: titleIdToPlatform(title.npTitleId),
       progress: game.progress ?? null,
       earnedTrophies: game.earnedTrophies ?? null,
-      lastTrophyEarned: extractDate(game.lastUpdatedDateTime),
+      definedTrophies: game.definedTrophies ?? null,
+      lastTrophyEarned: game.lastUpdatedDateTime,
     }))
   );
 
@@ -404,7 +418,7 @@ async function mergePlayAndTrophyData(accessToken: string, accountId: string, pl
   );
 
   console.error(
-    `Filtered irrelevant data: ${lowPlaytimeRemoved} play data only games removed (<=1 hour), ${lowProgressRemoved} trophy data only games removed (<=5% progress)`
+    `Filtered irrelevant data: ${lowPlaytimeRemoved} play data only removed (<=1 hour), ${lowProgressRemoved} trophy data only removed (<=5% progress)`
   );
 
   const gamesBeforeMerge = mergedGames.length;
@@ -485,10 +499,6 @@ function durationToHours(duration: string): number {
   return Number((hours + minutes / 60 + seconds / 3600).toFixed(2));
 }
 
-function extractDate(dateTime?: string | null): string | null {
-  return dateTime?.split("T")[0] ?? null;
-}
-
 function titleIdToPlatform(titleId: string): string | null {
   if (titleId.startsWith("CUSA")) return "PS4";
   if (titleId.startsWith("PPSA")) return "PS5";
@@ -518,7 +528,8 @@ function normaliseTrophyData(trophies: any[]) {
     platform: trophy.platform,
     progress: trophy.progress,
     earnedTrophies: trophy.earnedTrophies,
-    lastTrophyEarned: trophy.lastTrophyEarned
+    definedTrophies: trophy.definedTrophies,
+    lastTrophyEarned: trophy.lastTrophyEarned,
   }));
 }
 
