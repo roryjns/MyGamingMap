@@ -9,12 +9,10 @@ public class AnalyticsService(PSNAnalyticsService psnAnalyticsService, IGDBAnaly
 
     public async Task<Analytics> GenerateAnalytics(List<EnrichedPlayerGame> enrichedPlayerGames)
     {
-        var playerGames = enrichedPlayerGames.Select(e => e.PlayerGame).ToList();
-
         return new Analytics
         {
-            //PSN = psnAnalyticsService.CalculatePSNAnalytics(enrichedPlayerGames),
-            IGDB = iGDBAnalyticsService.CalculateIGDBAnalytics(enrichedPlayerGames)
+            PSN = psnAnalyticsService.CalculatePSNAnalytics(enrichedPlayerGames),
+            IGDB = await iGDBAnalyticsService.CalculateIGDBAnalytics(enrichedPlayerGames)
         };
     }
 }

@@ -75,13 +75,33 @@ public class IGDBService
         igdb = IGDBClient.CreateWithDefaults(clientId, clientSecret);
     }
 
-    private async Task<IGDBMatchingResult> GetIGDBGamesInternal(List<PlayerGame> playerGames)
+    public async Task<List<EnrichedPlayerGame>> GetEnrichedGames(List<PlayerGame> playerGames)
+    {
+        var result = await GetIGDBGamesInternal(playerGames, useDatabase: true);
+
+        await File.WriteAllTextAsync(
+            "enriched_games.json",
+            JsonSerializer.Serialize(
+                result.EnrichedGames,
+                new JsonSerializerOptions
+                {
+                    WriteIndented = true
+                }
+            )
+        );
+
+        return result.EnrichedGames;
+    }
+
+    private async Task<IGDBMatchingResult> GetIGDBGamesInternal(List<PlayerGame> playerGames, bool useDatabase = true)
     {
         var stopwatch = Stopwatch.StartNew();
 
         // Stage 1: Remove known failures
-        var failedLookupKeys = await databaseService.GetFailedLookupKeys();
-        var originalPlayerGameCount = playerGames.Count;
+        var failedLookupKeys = useDatabase
+            ? await databaseService.GetFailedLookupKeys()
+            : []; var originalPlayerGameCount = playerGames.Count;
+
         var previouslyFailedGames = playerGames
             .Where(pg =>
                 failedLookupKeys.Contains(
@@ -143,36 +163,42 @@ public class IGDBService
         var databaseMatches = new List<(PlayerGame PlayerGame, long IGDBId)>();
         var unmatchedAfterDatabase = new List<PlayerGame>();
 
-        foreach (var playerGame in gamesToLookup)
+        if (useDatabase)
         {
-            var igdbId = await databaseService.GetIGDBId(playerGame.ConceptId, playerGame.TrophyData.Select(t => t.NpCommunicationId));
-            if (igdbId is long id) databaseMatches.Add((playerGame, igdbId.Value));
-            else unmatchedAfterDatabase.Add(playerGame);
+            foreach (var playerGame in gamesToLookup)
+            {
+                var igdbId = await databaseService.GetIGDBId(playerGame.ConceptId, playerGame.TrophyData.Select(t => t.NpCommunicationId));
+                if (igdbId is long id) databaseMatches.Add((playerGame, igdbId.Value));
+                else unmatchedAfterDatabase.Add(playerGame);
+            }
+
+            var databaseGameIds = databaseMatches.Select(x => x.IGDBId).Distinct().ToList();
+            var databaseGames = await databaseService.GetGamesByIGDBIds(databaseGameIds);
+
+            foreach (var mapping in databaseMatches)
+            {
+                if (databaseGames.TryGetValue(mapping.IGDBId, out var game))
+                {
+                    enrichedGames.Add(
+                        new EnrichedPlayerGame
+                        {
+                            PlayerGame = mapping.PlayerGame,
+                            IGDBGame = ConvertToIGDBGame(game)
+                        }
+                    );
+
+                    databaseHits++;
+                }
+                else
+                {
+                    unmatchedAfterDatabase.Add(mapping.PlayerGame);
+                }
+            }
         }
-
-        var databaseGameIds = databaseMatches.Select(x => x.IGDBId).Distinct().ToList();
-        var databaseGames = await databaseService.GetGamesByIGDBIds(databaseGameIds);
-
-        foreach (var mapping in databaseMatches)
+        else
         {
-            if (databaseGames.TryGetValue(mapping.IGDBId, out var game))
-            {
-                enrichedGames.Add(
-                    new EnrichedPlayerGame
-                    {
-                        PlayerGame = mapping.PlayerGame,
-                        IGDBGame = ConvertToIGDBGame(game)
-                    }
-                );
-
-                databaseHits++;
-            }
-            else
-            {
-                unmatchedAfterDatabase.Add(
-                    mapping.PlayerGame
-                );
-            }
+            // With no database, everything proceeds directly to name lookup.
+            unmatchedAfterDatabase.AddRange(gamesToLookup);
         }
 
         Console.WriteLine($"Matched from database: {databaseHits}/{originalPlayerGameCount}");
@@ -192,14 +218,17 @@ public class IGDBService
 
         foreach (var result in matchedByName)
         {
-            await databaseService.SaveGame(result.IGDBGame!.RawGame);
-            await databaseService.SaveGameMapping(result.PlayerGame, result.IGDBGame.Game.IGDB_Id);
+            if (useDatabase)
+            {
+                await databaseService.SaveGame(result.IGDBGame!.RawGame);
+                await databaseService.SaveGameMapping(result.PlayerGame, result.IGDBGame.Game.IGDB_Id);
+            }
 
             enrichedGames.Add(
                 new EnrichedPlayerGame
                 {
                     PlayerGame = result.PlayerGame,
-                    IGDBGame = result.IGDBGame.Game
+                    IGDBGame = result.IGDBGame!.Game
                 }
             );
         }
@@ -208,9 +237,6 @@ public class IGDBService
             .Where(r => r.IGDBGame == null)
             .Select(r => r.PlayerGame)
             .ToList();
-
-        foreach (var playerGame in unmatchedAfterName.Where(g => g.ConceptId == null))
-            await databaseService.SaveFailedLookup(playerGame);
 
         var noConceptId = unmatchedAfterName.Count(g => g.ConceptId == null);
         var hasConceptId = unmatchedAfterName.Count(g => g.ConceptId != null);
@@ -225,7 +251,10 @@ public class IGDBService
         // These cannot proceed to ConceptId lookup
         foreach (var playerGame in unmatchedAfterName.Where(g => g.ConceptId == null))
         {
-            await databaseService.SaveFailedLookup(playerGame);
+            if (useDatabase)
+            {
+                await databaseService.SaveFailedLookup(playerGame);
+            }
 
             enrichedGames.Add(
                 new EnrichedPlayerGame
@@ -264,22 +293,17 @@ public class IGDBService
 
         foreach (var result in conceptLookupResults.Where(r => r.IGDBGame != null))
         {
-            await databaseService.SaveGame(
-                result.IGDBGame!.RawGame
-            );
+            if (useDatabase) await databaseService.SaveGame(result.IGDBGame!.RawGame);
 
             foreach (var playerGame in result.PlayerGames)
             {
-                await databaseService.SaveGameMapping(
-                    playerGame,
-                    result.IGDBGame.Game.IGDB_Id
-                );
+                if (useDatabase) await databaseService.SaveGameMapping(playerGame, result.IGDBGame!.Game.IGDB_Id);
 
                 enrichedGames.Add(
                     new EnrichedPlayerGame
                     {
                         PlayerGame = playerGame,
-                        IGDBGame = result.IGDBGame.Game
+                        IGDBGame = result.IGDBGame!.Game
                     }
                 );
             }
@@ -289,7 +313,10 @@ public class IGDBService
         {
             foreach (var playerGame in result.PlayerGames)
             {
-                await databaseService.SaveFailedLookup(playerGame);
+                if (useDatabase)
+                {
+                    await databaseService.SaveFailedLookup(playerGame);
+                }
 
                 enrichedGames.Add(
                     new EnrichedPlayerGame
@@ -338,24 +365,6 @@ public class IGDBService
         };
     }
 
-    public async Task<List<EnrichedPlayerGame>> GetEnrichedGames(List<PlayerGame> playerGames)
-    {
-        var result = await GetIGDBGamesInternal(playerGames);
-
-        await File.WriteAllTextAsync(
-            "enriched_games.json",
-            JsonSerializer.Serialize(
-                result.EnrichedGames,
-                new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                }
-            )
-        );
-
-        return result.EnrichedGames;
-    }
-
     public async Task<IGDBBenchmarkResult> GetIGDBGamesBenchmark(List<PlayerGame> playerGames)
     {
         var result = await GetIGDBGamesInternal(playerGames);
@@ -381,7 +390,7 @@ public class IGDBService
 
         // Filter to only main game, bundle, standalone expansion, episode, remake, remaster, expanded game and port
         var matches = await ExecuteIGDBRequest(() =>
-            igdb.QueryAsync<IGDB.Models.Game>(
+            igdb.QueryAsync<Game>(
             IGDBClient.Endpoints.Games,
             $"""
             search "{searchName}";
@@ -427,9 +436,7 @@ public class IGDBService
 
             var similarity = candidateNames.Max(candidate =>
             {
-                var normalisedCandidate = NormaliseName(candidate);
-                var originalSimilarity = StringSimilarity.JaroWinkler(NormaliseName(Name), normalisedCandidate);
-                return originalSimilarity;
+                return StringSimilarity.JaroWinkler(NormaliseName(Name), NormaliseName(candidate));
             });
 
             return new
@@ -440,7 +447,11 @@ public class IGDBService
         })
         .ToList();
 
-        var bestMatch = candidates.OrderByDescending(x => x.Similarity).FirstOrDefault();
+        // When similarity is tied, prefer the shorter original IGDB name. Prevents an edition being prefered over main game
+        var bestMatch = candidates
+            .OrderByDescending(x => x.Similarity)
+            .ThenBy(x => x.Game.Name?.Length ?? int.MaxValue)
+            .FirstOrDefault();
 
         if (bestMatch != null)
         {
@@ -495,7 +506,7 @@ public class IGDBService
             .ToList();
 
         var games = await ExecuteIGDBRequest(() =>
-            igdb.QueryAsync<IGDB.Models.Game>(
+            igdb.QueryAsync<Game>(
                 IGDBClient.Endpoints.Games,
                 $"""
                 fields {gameQueryFields};
@@ -532,7 +543,7 @@ public class IGDBService
             if (game.GameType?.Value?.Type == "Episode" && game.ParentGame?.Id != null)
             {
                 var parentGame = (await ExecuteIGDBRequest(() =>
-                    igdb.QueryAsync<IGDB.Models.Game>(
+                    igdb.QueryAsync<Game>(
                         IGDBClient.Endpoints.Games,
                         $"""
                         fields {gameQueryFields};
@@ -665,7 +676,7 @@ public class IGDBService
                 ? pegiRating
                 : null,
 
-            ReviewRating = NormaliseRating(game.TotalRating, game.TotalRatingCount),
+            ReviewRating = game.TotalRating,
             ReviewCount = game.TotalRatingCount,
             Storyline = game.Storyline,
             Summary = game.Summary,
@@ -754,7 +765,8 @@ public class IGDBService
             " arena edition",
             " dawn edition",
             " rustless edition",
-            " intruders edition"
+            " intruders edition",
+            " extended edition",
         ];
 
         foreach (var edition in editions)
@@ -776,19 +788,6 @@ public class IGDBService
         );
 
         return normalised.Trim();
-    }
-
-    private static double? NormaliseRating(double? rating, int? reviewCount)
-    {
-        if (!rating.HasValue || !reviewCount.HasValue) return null;
-
-        const double averageRating = 70; // Adjust based on dataset
-        const double minimumReviews = 50;
-
-        var v = reviewCount.Value;
-        var R = rating.Value;
-
-        return (v / (v + minimumReviews) * R) + (minimumReviews / (v + minimumReviews) * averageRating);
     }
 
     private async Task<T> ExecuteIGDBRequest<T>(Func<Task<T>> request)

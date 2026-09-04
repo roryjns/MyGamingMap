@@ -9,6 +9,7 @@ public class PSNAnalytics
 public class ActivityAnalytics
 {
     public int TotalGamesPlayed { get; set; }
+    public int UniqueGamesPlayed { get; set; }
     public double TotalHoursPlayed { get; set; }
     public int TotalSessionsPlayed { get; set; }
 
@@ -32,9 +33,9 @@ public class ActivityAnalytics
     public List<MostPlayedGame> MostPlayedGames { get; set; } = [];
     public List<Drought> NewGameDroughts { get; set; } = [];
     public List<GamesStartedByYear> GamesStartedPerYear { get; set; } = [];
-    public List<AbandonedGame> MostAbandonedGames { get; set; } = [];
+    public List<AbandonedGame> AbandonedGames { get; set; } = [];
     public List<EnrichedPlayerGame> LongestRunningGames { get; set; } = []; // Largest GameSpanDays
-    public List<EnrichedPlayerGame> SingleDayGames { get; set; } = []; // GameSpanDays == 1 or PlayCount == 1 && GameSpanDays <= 2
+    public List<EnrichedPlayerGame> SingleDayGames { get; set; } = [];
 
     public int PS3GamesPlayed { get; set; }
     public int PSVitaGamesPlayed { get; set; }

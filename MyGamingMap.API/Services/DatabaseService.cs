@@ -113,6 +113,8 @@ public class DatabaseService(MyGamingMapContext context)
             IGDBId = game.Id.Value
         };
 
+        if (existingGame == null) context.Games.Add(dbGame);
+
         if (gameNeedsUpdate)
         {
             dbGame.Name = game.Name ?? "";
@@ -132,7 +134,7 @@ public class DatabaseService(MyGamingMapContext context)
                 ? pegi
                 : null;
 
-            dbGame.ReviewRating = NormaliseRating(game.TotalRating, game.TotalRatingCount);
+            dbGame.ReviewRating = game.TotalRating;
             dbGame.ReviewCount = game.TotalRatingCount;
             dbGame.Storyline = game.Storyline;
             dbGame.Summary = game.Summary;
@@ -287,11 +289,52 @@ public class DatabaseService(MyGamingMapContext context)
             );
         }
 
-        dbGame.InvolvedCompanies = await GetInvolvedCompanies(game);
+        await UpdateInvolvedCompanies(dbGame, game);
 
-        if (existingGame == null) context.Games.Add(dbGame);
+        try
+        {
+            await context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            Console.WriteLine("CONCURRENCY EXCEPTION");
 
-        await context.SaveChangesAsync();
+            foreach (var entry in ex.Entries)
+            {
+                Console.WriteLine($"Entity: {entry.Entity.GetType().Name}");
+                Console.WriteLine($"State: {entry.State}");
+
+                foreach (var property in entry.Properties)
+                {
+                    Console.WriteLine(
+                        $"  {property.Metadata.Name}: " +
+                        $"Current={property.CurrentValue}, " +
+                        $"Original={property.OriginalValue}"
+                    );
+                }
+
+                var databaseValues = await entry.GetDatabaseValuesAsync();
+
+                if (databaseValues == null)
+                {
+                    Console.WriteLine("  DATABASE ROW DOES NOT EXIST");
+                }
+                else
+                {
+                    Console.WriteLine("  DATABASE ROW EXISTS");
+
+                    foreach (var property in databaseValues.Properties)
+                    {
+                        Console.WriteLine(
+                            $"  DB {property.Name}: " +
+                            $"{databaseValues[property]}"
+                        );
+                    }
+                }
+            }
+
+            throw;
+        }
     }
 
     public async Task SaveGameMapping(PlayerGame playerGame, long igdbId)
@@ -424,25 +467,46 @@ public class DatabaseService(MyGamingMapContext context)
         return entity;
     }
 
-    private async Task<List<Models.Entities.InvolvedCompany>> GetInvolvedCompanies(IGDB.Models.Game game)
+    private async Task UpdateInvolvedCompanies(Game dbGame, IGDB.Models.Game game)
     {
-        if (game.InvolvedCompanies?.Values == null) return [];
+        var igdbCompanies = game.InvolvedCompanies?.Values;
 
-        var involvedCompanies = new List<Models.Entities.InvolvedCompany>();
-
-        foreach (var ic in game.InvolvedCompanies.Values)
+        if (igdbCompanies == null)
         {
-            // Only save developers and publishers
-            if (!(ic.Developer ?? false) && !(ic.Publisher ?? false)) continue;
+            dbGame.InvolvedCompanies.Clear();
+            return;
+        }
 
-            var igdbCompany = ic.Company?.Value;
+        var relevantCompanies = igdbCompanies
+            .Where(ic =>
+                (ic.Developer ?? false) ||
+                (ic.Publisher ?? false))
+            .Where(ic =>
+                ic.Id != null &&
+                ic.Company?.Value?.Id != null)
+            .ToList();
 
-            if (igdbCompany?.Id == null) continue;
+        var igdbIds = relevantCompanies
+            .Select(ic => ic.Id!.Value)
+            .ToHashSet();
+
+        // Remove relationships no longer present
+        foreach (var existing in dbGame.InvolvedCompanies.ToList())
+        {
+            if (!igdbIds.Contains(existing.Id))
+            {
+                dbGame.InvolvedCompanies.Remove(existing);
+            }
+        }
+
+        foreach (var ic in relevantCompanies)
+        {
+            var igdbCompany = ic.Company!.Value;
 
             var company = await GetOrCreateIGDBEntity(
-                igdbCompany.Id.Value,
+                igdbCompany.Id!.Value,
                 igdbCompany.UpdatedAt,
-                () => new Models.Entities.Company
+                () => new Company
                 {
                     Id = igdbCompany.Id.Value,
                     Name = igdbCompany.Name ?? "",
@@ -456,16 +520,29 @@ public class DatabaseService(MyGamingMapContext context)
                 }
             );
 
-            involvedCompanies.Add(new Models.Entities.InvolvedCompany
-            {
-                Id = ic.Id!.Value,
-                Company = company,
-                Developer = ic.Developer ?? false,
-                Publisher = ic.Publisher ?? false
-            });
-        }
+            var existing = dbGame.InvolvedCompanies
+                .FirstOrDefault(x => x.Id == ic.Id!.Value);
 
-        return involvedCompanies;
+            if (existing == null)
+            {
+                var newInvolvedCompany = new InvolvedCompany
+                {
+                    Id = ic.Id!.Value,
+                    Game = dbGame,
+                    Company = company,
+                    Developer = ic.Developer ?? false,
+                    Publisher = ic.Publisher ?? false
+                };
+
+                context.InvolvedCompanies.Add(newInvolvedCompany);
+            }
+            else
+            {
+                existing.Company = company;
+                existing.Developer = ic.Developer ?? false;
+                existing.Publisher = ic.Publisher ?? false;
+            }
+        }
     }
 
     private async Task<List<Models.Entities.ReleaseDate>> GetReleaseDates(IGDB.Models.Game game)
@@ -480,7 +557,7 @@ public class DatabaseService(MyGamingMapContext context)
 
             if (platformName == null || !PlayStationPlatforms.TryGetValue(platformName, out var platform)) continue;
 
-            Models.Entities.Region? region = null;
+            Region? region = null;
 
             var igdbRegion = r.ReleaseRegion?.Value;
 
@@ -489,7 +566,7 @@ public class DatabaseService(MyGamingMapContext context)
                 region = await GetOrCreateIGDBEntity(
                     igdbRegion.Id.Value,
                     igdbRegion.UpdatedAt,
-                    () => new Models.Entities.Region
+                    () => new Region
                     {
                         Id = igdbRegion.Id.Value,
                         Name = igdbRegion.Region ?? "",
@@ -514,16 +591,31 @@ public class DatabaseService(MyGamingMapContext context)
         return releaseDates;
     }
 
-    private static double? NormaliseRating(double? rating, int? reviewCount)
+    public async Task<List<string>> GetUnexploredGenres(IEnumerable<EnrichedPlayerGame> playerGames)
     {
-        if (!rating.HasValue || !reviewCount.HasValue) return null;
+        var playerGenres = playerGames
+            .SelectMany(g => g.IGDBGame?.Genres ?? [])
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        const double averageRating = 70; // Adjust based on dataset
-        const double minimumReviews = 50;
+        return await context.Genres
+            .AsNoTracking()
+            .Where(g => !playerGenres.Contains(g.Name) && g.Name != "Pinball")
+            .OrderBy(g => g.Name)
+            .Select(g => g.Name)
+            .ToListAsync();
+    }
 
-        var v = reviewCount.Value;
-        var R = rating.Value;
+    public async Task<List<string>> GetUnexploredThemes(IEnumerable<EnrichedPlayerGame> playerGames)
+    {
+        var playerThemes = playerGames
+            .SelectMany(g => g.IGDBGame?.Themes ?? [])
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        return (v / (v + minimumReviews) * R) + (minimumReviews / (v + minimumReviews) * averageRating);
+        return await context.Themes
+            .AsNoTracking()
+            .Where(t => !playerThemes.Contains(t.Name) && t.Name != "Erotic")
+            .OrderBy(t => t.Name)
+            .Select(t => t.Name)
+            .ToListAsync();
     }
 }

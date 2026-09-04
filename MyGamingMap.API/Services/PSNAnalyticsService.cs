@@ -4,15 +4,12 @@ namespace MyGamingMap.API.Services;
 
 public class PSNAnalyticsService
 {
-    private const int MostPlayedGamesCount = 10;
-    private const int LongestGamesCount = 10;
     private const int SingleDayGamesCount = 10;
-    private const int LongestDroughtsCount = 3;
-    private const int GamingDroughtThresholdDays = 14;
+    private const int NewGameDroughtThresholdDays = 90;
+    private const int AbandonedGamesCount = 10;
     private const int minimumDaysSincePlayedForAbandoned = 60;
     private const double minimumHoursPlayedForAbandoned = 3;
     private const int maximumTrophyProgressForAbandoned = 20;
-    private const int AbandonedGamesCount = 10;
 
     public PSNAnalytics CalculatePSNAnalytics(List<EnrichedPlayerGame> games)
     {
@@ -126,26 +123,46 @@ public class PSNAnalyticsService
                 ? result.TotalHoursPlayed / playtimeSpanDays
                 : result.TotalHoursPlayed;
 
-        result.LongestRunningGames = [.. gameSpans
-            .Where(x => x.Game.PlayerGame.ConceptId.HasValue)
-            .GroupBy(x => x.Game.PlayerGame.ConceptId!.Value)
-            .Select(group =>
-            {
-                var first = group.Min(x => x.Game.PlayerGame.FirstPlayed!.Value);
-                var last = group.Max(x => x.Game.PlayerGame.LastPlayed!.Value);
+        var uniqueGames = EnrichedGameHelper.MergeByConceptId(games);
 
-                return new
+        result.UniqueGamesPlayed = uniqueGames.Count;
+
+        var mostPlayedGamesCount = uniqueGames.Count switch
+        {
+            < 15 => 1,
+            < 25 => 3,
+            < 50 => 5,
+            _ => 10
+        };
+
+        result.MostPlayedGames =
+        [
+            .. uniqueGames
+                .Where(g => g.PlayerGame.PlayHours.HasValue)
+                .Select(g => new MostPlayedGame
                 {
-                    group
-                        .OrderByDescending(x => x.SpanDays)
-                        .First()
-                        .Game,
-                    SpanDays = (last - first).TotalDays
-                };
-            })
-            .OrderByDescending(x => x.SpanDays)
-            .Take(LongestGamesCount)
-            .Select(x => x.Game)];
+                    Game = g,
+                    PercentageOfTotalPlaytime = totalHoursPlayed > 0
+                        ? g.PlayerGame.PlayHours!.Value / totalHoursPlayed * 100
+                        : 0
+                })
+                .OrderByDescending(g => g.Game.PlayerGame.PlayHours)
+                .Take(mostPlayedGamesCount)
+        ];
+
+        var longestGamesCount = uniqueGames.Count switch
+        {
+            < 15 => 1,
+            < 25 => 3,
+            < 100 => 5,
+            _ => 10
+        };
+
+        result.LongestRunningGames = [.. uniqueGames
+            .Where(x => x.PlayerGame.LastPlayed.HasValue && x.PlayerGame.FirstPlayed.HasValue)
+            .OrderByDescending(x => x.PlayerGame.LastPlayed - x.PlayerGame.FirstPlayed)
+            .Take(longestGamesCount)
+        ];
 
         result.SingleDayGames = [.. games
             .Where(g =>
@@ -169,26 +186,23 @@ public class PSNAnalyticsService
 
         var droughts = CalculateNewGameDroughts(games);
 
-        if (droughts.Count > 0)
-        {
-            result.NewGameDroughts = [.. droughts
-                .OrderByDescending(d => d.DurationDays)
-                .Take(LongestDroughtsCount)];
-        }
+        if (droughts.Count > 0) result.NewGameDroughts = [.. droughts.OrderByDescending(d => d.DurationDays)];
 
         result.GamesStartedPerYear = [.. games
-                .Where(g => g.PlayerGame.FirstPlayed.HasValue)
-                .GroupBy(g => g.PlayerGame.FirstPlayed!.Value.Year)
-                .OrderBy(g => g.Key)
-                .Select(g => new GamesStartedByYear
-                {
-                    Year = g.Key,
-                    GamesStarted = g.Count()
-                })];
+            .Where(g => g.PlayerGame.FirstPlayed.HasValue)
+            .GroupBy(g => g.PlayerGame.FirstPlayed!.Value.Year)
+            .OrderBy(g => g.Key)
+            .Select(g => new GamesStartedByYear
+            {
+                Year = g.Key,
+                GamesStarted = g.Count()
+            })];
 
         var cutoffDate = DateTime.UtcNow.AddDays(-minimumDaysSincePlayedForAbandoned);
 
-        result.MostAbandonedGames = [.. games
+        // A game is considered abandoned if it has not been played in the last 60 days, 
+        // has at least 3 hours playtime, and has a trophy progress of less than 20%.
+        result.AbandonedGames = [.. games
             .Where(g =>
             g.PlayerGame.LastPlayed.HasValue &&
             g.PlayerGame.LastPlayed.Value < cutoffDate &&
@@ -215,32 +229,6 @@ public class PSNAnalyticsService
             .Take(AbandonedGamesCount)
             .ToList()];
 
-        result.MostPlayedGames = [.. games
-            .Where(g => g.PlayerGame.ConceptId.HasValue && g.PlayerGame.PlayHours.HasValue)
-            .GroupBy(g => g.PlayerGame.ConceptId!.Value)
-            .Select(group => new MostPlayedGame
-            {
-                Game = group
-                    .OrderByDescending(g => g.PlayerGame.PlayHours!.Value)
-                    .First(),
-
-                HoursPlayed = group.Sum(g => g.PlayerGame.PlayHours!.Value),
-
-                SessionsPlayed = group.Sum(g => g.PlayerGame.PlayCount!.Value),
-
-                PercentageOfTotalPlaytime = group.Sum(g => g.PlayerGame.PlayHours!.Value / totalHoursPlayed) * 100
-            })
-            .OrderByDescending(x => x.HoursPlayed)
-            .Take(MostPlayedGamesCount)];
-
-        foreach (var game in result.MostPlayedGames)
-        {
-            game.PercentageOfTotalPlaytime =
-                result.TotalHoursPlayed > 0
-                    ? game.HoursPlayed / result.TotalHoursPlayed * 100
-                    : 0;
-        }
-
         result.PS3GamesPlayed = games.Count(
             g => string.Equals(
                 g.PlayerGame.Platform,
@@ -255,15 +243,8 @@ public class PSNAnalyticsService
                 StringComparison.OrdinalIgnoreCase)
         );
 
-        result.PS4 = CalculatePlatformPlaytime(
-            games,
-            "PS4"
-        );
-
-        result.PS5 = CalculatePlatformPlaytime(
-            games,
-            "PS5"
-        );
+        result.PS4 = CalculatePlatformPlaytime(games, "PS4");
+        result.PS5 = CalculatePlatformPlaytime(games, "PS5");
 
         return result;
     }
@@ -336,7 +317,7 @@ public class PSNAnalyticsService
                  previous.PlayerGame.LastPlayed!.Value)
                 .Days - 1;
 
-            if (gapDays >= GamingDroughtThresholdDays)
+            if (gapDays >= NewGameDroughtThresholdDays)
             {
                 droughts.Add(new Drought
                 {
@@ -350,34 +331,6 @@ public class PSNAnalyticsService
         }
 
         return droughts;
-    }
-
-    private static DateTime? GetFirstActivityDate(PlayerGame game)
-    {
-        var dates = new List<DateTime>();
-
-        if (game.FirstPlayed != null) dates.Add((DateTime)game.FirstPlayed);
-
-        foreach (var trophySet in game.TrophyData)
-        {
-            if (trophySet.LastTrophyEarned.HasValue) dates.Add(trophySet.LastTrophyEarned.Value);
-        }
-
-        return dates.Count > 0 ? dates.Min() : null;
-    }
-
-    private static DateTime? GetLastActivityDate(PlayerGame game)
-    {
-        var dates = new List<DateTime>();
-
-        if (game.LastPlayed.HasValue) dates.Add(game.LastPlayed.Value);
-
-        foreach (var trophySet in game.TrophyData)
-        {
-            if (trophySet.LastTrophyEarned.HasValue) dates.Add(trophySet.LastTrophyEarned.Value);
-        }
-
-        return dates.Count > 0 ? dates.Max() : null;
     }
 
     public TrophyAnalytics CalculateTrophyAnalytics(IEnumerable<EnrichedPlayerGame> games)
@@ -472,7 +425,7 @@ public class PSNAnalyticsService
                     : 0
         };
     }
-    
+
     private static double CalculateAverage(IEnumerable<double> values)
     {
         var array = values.ToArray();
@@ -492,6 +445,34 @@ public class PSNAnalyticsService
         if (array.Length % 2 == 1) return array[middle];
 
         return (array[middle - 1] + array[middle]) / 2.0;
+    }
+
+    private static DateTime? GetFirstActivityDate(PlayerGame game)
+    {
+        var dates = new List<DateTime>();
+
+        if (game.FirstPlayed != null) dates.Add((DateTime)game.FirstPlayed);
+
+        foreach (var trophySet in game.TrophyData)
+        {
+            if (trophySet.LastTrophyEarned.HasValue) dates.Add(trophySet.LastTrophyEarned.Value);
+        }
+
+        return dates.Count > 0 ? dates.Min() : null;
+    }
+
+    private static DateTime? GetLastActivityDate(PlayerGame game)
+    {
+        var dates = new List<DateTime>();
+
+        if (game.LastPlayed.HasValue) dates.Add(game.LastPlayed.Value);
+
+        foreach (var trophySet in game.TrophyData)
+        {
+            if (trophySet.LastTrophyEarned.HasValue) dates.Add(trophySet.LastTrophyEarned.Value);
+        }
+
+        return dates.Count > 0 ? dates.Max() : null;
     }
 
     private sealed class GameActivityPeriod

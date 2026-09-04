@@ -509,9 +509,13 @@ function titleIdToPlatform(titleId: string): string | null {
 function normaliseName(name: string): string {
   return name
     .replace(/[™®©]/g, "")
-    .replace(/\s*\(?\s*(PS4|PS5|PS4\s*&\s*PS5|PlayStationVita|PS Vita|PlayStation\s*3|PlayStation\s*4|PlayStation\s*5)\s*\)?/gi, "")
+    // Remove platform-specific editions first
+    .replace(/\s*:?\s*(PlayStationVita|PlayStation\s*3|PlayStation\s*4|PlayStation\s*5)\s+Edition/gi, "")
+    // Remove platform names
+    .replace(/\s*\(?\s*(for\s+PS5|PS4|PS5|PS4\s*&\s*PS5|PlayStationVita|PS Vita|PlayStation\s*3|PlayStation\s*4|PlayStation\s*5)\s*\)?/gi, "")
+    // Remove other editions
     .replace(/\s*:?\s*(Game of the Year Edition|Ultimate Edition|Deluxe Edition|Deluxe Editiom|Collector's Edition|Limited Edition|Extended Edition|Console Edition|PlayStationVita Edition|PlayStation3 Edition|PlayStation4 Edition|Playstation5 Edition|Premium Edition|Special Edition)\s*$/gi, "")
-    .replace(/\s*\(?\s*(ASIA|EU|JA|NA|JP)\s*\)?$/gi, "")
+    .replace(/\s+\(?\s*(ASIA|EU|JA|NA|JP)\s*\)?$/gi, "")
     .replace(/\s*:\s*Edition\s*$/gi, "")
     .replace(/\s+editon$/gi, " edition")
     .replace(/\s+HD\s*$/gi, "")
