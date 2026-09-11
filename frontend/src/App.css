@@ -1,0 +1,107 @@
+.shimmer-text {
+  background: linear-gradient(90deg,
+      var(--chakra-colors-fg-muted) 0%,
+      var(--chakra-colors-fg-muted) 40%,
+      var(--chakra-colors-fg) 50%,
+      var(--chakra-colors-fg-muted) 60%,
+      var(--chakra-colors-fg-muted) 100%);
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 2s linear infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.game-card {
+  perspective: 1000px;
+}
+
+.game-card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.5s ease;
+  transform-style: preserve-3d;
+}
+
+.game-card:hover .game-card-inner {
+  transform: rotateY(180deg);
+}
+
+.game-card-front,
+.game-card-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  overflow: hidden;
+}
+
+.game-card-back {
+  transform: rotateY(180deg);
+}
+
+.game-card-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 4px;
+  background: linear-gradient(to top,
+      rgba(0, 0, 0, 0.879),
+      rgba(0, 0, 0, 0));
+}
+
+.platform-logos {
+  position: absolute;
+  bottom: 7.5px;
+  right: 4px;
+  display: flex;
+  gap: 4px;
+}
+
+.platform-logo {
+  width: 45px;
+  height: 13.5px;
+  border-radius: var(--chakra-radii-sm);
+}
+
+@keyframes tier-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes stamp-in {
+  0% {
+    opacity: 0;
+    transform: scale(1.4) rotate(-12deg);
+  }
+
+  60% {
+    opacity: 1;
+    transform: scale(0.95) rotate(3deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}

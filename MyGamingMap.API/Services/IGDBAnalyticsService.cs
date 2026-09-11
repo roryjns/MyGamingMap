@@ -18,10 +18,12 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
             .Where(g => g.IGDBGame != null)
             .ToList();
 
+        /*
         foreach (var game in games)
         {
             game.IGDBGame!.ReviewRating = NormaliseReviewRating(game.IGDBGame.ReviewRating, game.IGDBGame.ReviewCount);
         }
+        */
 
         var distinctGames = EnrichedGameHelper.MergeByConceptId(games);
 
@@ -502,7 +504,7 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
                     }
                 ).ToList();
 
-                const int MaxGamesPerTier = 1;
+                const int MaxGamesPerTier = 92; // 4 rows of 23 on my monitor
 
                 // Only merge the games that are actually stored.
                 foreach (var tierAnalytics in analytics)

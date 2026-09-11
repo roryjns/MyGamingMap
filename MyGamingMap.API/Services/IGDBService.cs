@@ -63,6 +63,11 @@ public class IGDBService
 
     private readonly DatabaseService databaseService;
 
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true
+    };
+
     public IGDBService(DatabaseService databaseService, IConfiguration configuration)
     {
         this.databaseService = databaseService;
@@ -83,10 +88,7 @@ public class IGDBService
             "enriched_games.json",
             JsonSerializer.Serialize(
                 result.EnrichedGames,
-                new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                }
+                JsonOptions
             )
         );
 
@@ -457,7 +459,7 @@ public class IGDBService
         {
             if (bestMatch.Similarity >= 0.98)
             {
-                if (bestMatch.Similarity < 1.00) Console.WriteLine($"Fuzzy matched '{Name}' -> '{bestMatch.Game.Name}' ({bestMatch.Similarity:P1})");
+                // if (bestMatch.Similarity < 1.00) Console.WriteLine($"Fuzzy matched '{Name}' -> '{bestMatch.Game.Name}' ({bestMatch.Similarity:P1})");
 
                 if (bestMatch.Game.Id != null)
                 {
