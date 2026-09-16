@@ -18,6 +18,7 @@ builder.Services.AddScoped<DatabaseService>();
 builder.Services.AddScoped<AnalyticsService>();
 builder.Services.AddScoped<PSNAnalyticsService>();
 builder.Services.AddScoped<IGDBAnalyticsService>();
+builder.Services.AddSingleton<RateLimiter>();
 
 builder.Services.AddDbContext<MyGamingMapContext>(options =>
     options

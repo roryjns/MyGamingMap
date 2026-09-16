@@ -6,13 +6,13 @@ type GameCardProps = {
   game: any
 
   width?: string
-  height?: string
   borderRadius?: string
   borderWidth?: string
 
   showOverlay?: boolean
   showName?: boolean
   showDevelopers?: boolean
+  showReviewRating?: boolean
   showPlayHours?: boolean
   showSessions?: boolean
   showDateRange?: boolean
@@ -24,27 +24,27 @@ const getIgdbImageUrl = (imageId: string) =>
 export function GameCard({
   game,
   width = "135px",
-  height = "180px",
   borderRadius = "1px",
   borderWidth = "1px solid var(--chakra-colors-border)",
-  showOverlay = true,
-  showName = true,
-  showDevelopers = true,
-  showPlayHours = true,
-  showSessions = true,
-  showDateRange = true,
+  showOverlay = false,
+  showName = false,
+  showDevelopers = false,
+  showReviewRating = false,
+  showPlayHours = false,
+  showSessions = false,
+  showDateRange = false,
 }: GameCardProps) {
   const playerGame = game.playerGame
 
   return (
-    <Box className="game-card" width={width} height={height} borderRadius={borderRadius} >
+    <Box className="game-card" width={width} borderRadius={borderRadius} >
       <Box className="game-card-inner">
         <Box className="game-card-front" borderRadius={borderRadius} borderWidth={borderWidth}>
           <Image
             src={getIgdbImageUrl(playerGame.imageUrl)}
             alt={playerGame.name}
             width="100%"
-            height="auto"
+            height="100%"
             objectFit="cover"
             loading="lazy"
             decoding="async"
@@ -78,12 +78,18 @@ export function GameCard({
 
         <Box className="game-card-back" borderRadius={borderRadius} borderWidth="1px solid var(--chakra-colors-border)" >
           <Box p="3" height="100%" display="flex" flexDirection="column">
-            {showName ?? (
+            {showName && (
               <Heading size="sm" lineClamp="3">{playerGame.name}</Heading>
             )}
 
             {showDevelopers && (
               <Text fontSize="xs" lineClamp="2">{game.igdbGame?.developers?.join(", ") ?? ""}</Text>
+            )}
+
+            {showReviewRating && game.igdbGame?.reviewRating != null && (
+              <Box flex="1" display="flex" alignItems="center" justifyContent="center">
+                <Text textAlign="center" fontSize="lg" fontWeight="bold" >{game.igdbGame?.reviewRating.toFixed(1)}%</Text>
+              </Box>
             )}
 
             <Box mt="auto">

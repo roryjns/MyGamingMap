@@ -223,7 +223,7 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
 
                 if (hasSinglePlayer && modes.Count > 1)
                 {
-                    return ["Single player / Multiplayer"];
+                    return ["Single player + Multiplayer"];
                 }
 
                 return modes;
@@ -528,6 +528,24 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
             .OrderBy(x => x)
             .ToList();
 
+        var averageReviewRating = ratings.Average();
+
+        var averageReviewTier = tiers
+            .First(tier =>
+                averageReviewRating >= tier.Min &&
+                averageReviewRating < tier.Max)
+            .Name;
+
+        if (averageReviewTier != "S")
+        {
+            var tier = tiers.First(t => averageReviewRating >= t.Min && averageReviewRating < t.Max);
+            var range = tier.Max - tier.Min;
+            var third = range / 3.0;
+
+            if (averageReviewRating >= tier.Max - third) averageReviewTier += "+";
+            else if (averageReviewRating < tier.Min + third) averageReviewTier += "-";
+        }
+
         var playtimes = gamesWithPlaytime
             .Select(g => g.PlayerGame.PlayHours!.Value)
             .OrderBy(x => x)
@@ -548,6 +566,9 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
 
         return new ReviewRatingAnalytics
         {
+            AverageReviewRating = averageReviewRating,
+            AverageReviewTier = averageReviewTier,
+
             RatingTiers = [.. ratingTiers],
 
             HighestRatedGames = [..distinctGamesWithRatings
@@ -577,8 +598,6 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
             .OrderBy(g => g.PlayerGame.PlayHours!.Value)
             .ThenBy(g => g.IGDBGame!.ReviewRating!.Value)
             .Take(ReviewGamesCount)],
-
-            AverageReviewRating = ratings.Average()
         };
     }
 
@@ -1070,12 +1089,13 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
     {
         if (!rating.HasValue || !reviewCount.HasValue) return null;
 
-        const double averageRating = 70; // Adjust based on dataset
-        const double minimumReviews = 50;
+        const double priorRating = 72.0;
+        const double priorWeight = 500.0;
 
         var v = reviewCount.Value;
         var R = rating.Value;
 
-        return (v / (v + minimumReviews) * R) + (minimumReviews / (v + minimumReviews) * averageRating);
+        return (v / (v + priorWeight) * R)
+             + (priorWeight / (v + priorWeight) * priorRating);
     }
 }

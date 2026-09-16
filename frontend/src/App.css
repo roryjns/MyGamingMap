@@ -1,3 +1,7 @@
+:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px var(--chakra-colors-bg) inset !important;
+}
+
 .shimmer-text {
   background: linear-gradient(90deg,
       var(--chakra-colors-fg-muted) 0%,
@@ -23,7 +27,32 @@
   }
 }
 
+.page-title {
+    margin: 0;
+    font-size: clamp(1.875rem, 2.5vw, 2.5rem);
+    font-weight: 900;
+    line-height: 0.9;
+    text-align: center;
+}
+
+.page-subtitle {
+    margin-top: 0.75rem;
+    font-size: 1.125rem;
+    color: var(--chakra-colors-fg-muted);
+    text-align: center;
+}
+
+.stat-name {
+  font-size: medium; 
+  font-weight: bold;
+  letter-spacing: 0.12em;
+  color: var(--chakra-colors-fg-muted)
+}
+
 .game-card {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 3 / 4;
   perspective: 1000px;
 }
 
@@ -80,12 +109,12 @@
 @keyframes tier-card-in {
   from {
     opacity: 0;
-    transform: translateY(12px) scale(0.95);
+    transform: translateY(100px);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
 

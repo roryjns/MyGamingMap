@@ -96,6 +96,7 @@ public class AgeRatingAnalytic : CategoryAnalytic
 public class ReviewRatingAnalytics
 {
     public double AverageReviewRating { get; set; }
+    public string AverageReviewTier { get; set; } = "F";
     public List<ReviewRatingTier> RatingTiers { get; set; } = [];
     public List<EnrichedPlayerGame> HighestRatedGames { get; set; } = [];
     public List<EnrichedPlayerGame> LowestRatedGames { get; set; } = [];

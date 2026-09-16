@@ -94,7 +94,7 @@ export function AnimatedProgressCircle({
             </ProgressCircle.Root>
 
             {label && (
-                <Text fontSize="md" fontWeight="bold" letterSpacing="0.12em" color="fg.muted">{label}</Text>
+                <Text className="stat-name">{label}</Text>
             )}
         </VStack>
     )

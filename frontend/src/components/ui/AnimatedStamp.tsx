@@ -72,7 +72,7 @@ export function AnimatedStamp({
             </Box>
 
             {outerLabel && (
-                <Text fontSize="md" fontWeight="bold" letterSpacing="0.12em" color="fg.muted">{outerLabel}</Text>
+                <Text className="stat-name">{outerLabel}</Text>
             )}
         </VStack>
     )
