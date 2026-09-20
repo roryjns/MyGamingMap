@@ -79,16 +79,16 @@ function TierRow({
 export function TierList({ ratingTiers, averageReviewRating, averageReviewTier }: TierListProps) {
     const tierColors: Record<string, string> = {
         S: "purple.500",
-        A: "blue.500",
-        B: "green.500",
-        C: "yellow.500",
+        A: "brand.blue",
+        B: "brand.green",
+        C: "brand.yellow",
         D: "orange.500",
-        E: "red.500",
-        F: "red.700",
+        E: "brand.red",
+        F: "red.500",
     }
 
     return (
-        <Box width="100%">
+        <Box>
             <Box mb="12" textAlign="center">
                 <Heading className="page-title">Tier List</Heading>
                 <Text className="page-subtitle">Your games, ranked.</Text>

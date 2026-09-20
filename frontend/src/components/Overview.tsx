@@ -38,22 +38,22 @@ export function Overview({
             {
                 name: "PS3",
                 value: activityAnalytics.pS3GamesPlayed,
-                color: "#000000"
+                color: "#202020"
             },
             {
                 name: "PS Vita",
                 value: activityAnalytics.psVitaGamesPlayed,
-                color: "#505050"
+                color: "#9299a9"
             },
             {
                 name: "PS4",
                 value: activityAnalytics.pS4.gamesPlayed,
-                color: "#0070CC"
+                color: "brand.blue"
             },
             {
                 name: "PS5",
                 value: activityAnalytics.pS5.gamesPlayed,
-                color: "#FFFFFF"
+                color: "#f8f8f8"
             },
         ].filter(platform => platform.value > 0),
         series: [
@@ -80,9 +80,9 @@ export function Overview({
     const [radarStat, setRadarStat] = useState("gamesPlayed")
 
     const gameModeColors: Record<string, string> = {
-        "Single player only": "#0070CC",
-        "Multiplayer only": "#A855F7",
-        "Single player + Multiplayer": "#00A878",
+        "Single player only": "brand.blue",
+        "Multiplayer only": "brand.yellow",
+        "Single player + Multiplayer": "brand.green",
     }
 
     const gameModeChart = useChart({
@@ -91,12 +91,11 @@ export function Overview({
             .map(gameMode => ({
                 name: gameMode.name,
                 value: gameMode.gamesPlayed,
-                color: gameModeColors[gameMode.name] ?? "#808080",
+                color: gameModeColors[gameMode.name],
             })),
         series: [
             {
                 name: "value",
-                color: "teal.solid",
                 label: "Games Played"
             }
         ]
@@ -112,7 +111,6 @@ export function Overview({
         series: [
             {
                 name: "value",
-                color: "teal.solid",
                 label: getStatLabel(radarStat),
             },
         ],
@@ -128,7 +126,6 @@ export function Overview({
         series: [
             {
                 name: "value",
-                color: "purple.solid",
                 label: getStatLabel(radarStat),
             },
         ],
@@ -143,14 +140,13 @@ export function Overview({
         series: [
             {
                 name: "value",
-                color: "teal.solid",
                 label: "Games Played",
             },
         ],
     })
 
     return (
-        <Box width="100%">
+        <Box>
             <Box mb="12" textAlign="center">
                 <Heading className="page-title">Overview</Heading>
                 <Text className="page-subtitle">Your gaming DNA.</Text>
@@ -173,7 +169,7 @@ export function Overview({
                                     <Sector
                                         {...props}
                                         fill={platformChart.color(props.payload!.color)}
-                                        outerRadius={props.isActive ? 70 : 60} 
+                                        outerRadius={props.isActive ? 70 : 60}
                                         style={{
                                             transition: "all 0.3s ease-out",
                                         }}
@@ -222,7 +218,7 @@ export function Overview({
                                         outerRadius={props.isActive ? 70 : 60}
                                         style={{
                                             transition: "all 0.3s ease-out",
-                                        }} 
+                                        }}
                                     />
                                 )}
                             >
@@ -276,9 +272,9 @@ export function Overview({
                             <Tooltip content={<Chart.Tooltip />} />
                             <Radar
                                 dataKey="value"
-                                fill="var(--chakra-colors-teal-solid)"
+                                fill={genreChart.color("brand.blue")}
                                 fillOpacity={0.35}
-                                stroke="var(--chakra-colors-teal-solid)"
+                                stroke={genreChart.color("brand.blue")}
                             />
                         </RadarChart>
                     </Chart.Root>
@@ -311,9 +307,9 @@ export function Overview({
                             <Tooltip content={<Chart.Tooltip />} />
                             <Radar
                                 dataKey="value"
-                                fill="var(--chakra-colors-purple-solid)"
+                                fill={genreChart.color("brand.green")}
                                 fillOpacity={0.35}
-                                stroke="var(--chakra-colors-purple-solid)"
+                                stroke={genreChart.color("brand.green")}
                             />
                         </RadarChart>
                     </Chart.Root>
@@ -321,7 +317,7 @@ export function Overview({
                 </Flex>
             </Flex>
 
-            <Flex justify="center">
+            <Flex justify="center" mt="10">
                 <Field.Root width="230px">
                     <VisuallyHidden>
                         <Field.Label>Chart metric</Field.Label>
@@ -342,7 +338,11 @@ export function Overview({
                         <Select.Positioner>
                             <Select.Content>
                                 {statOptions.map(option => (
-                                    <Select.Item item={option.value} key={option.value}>
+                                    <Select.Item
+                                        item={option.value}
+                                        key={option.value}
+                                        _highlighted={{ _dark: { bg: "brand.dark_blue" } }}
+                                    >
                                         {option.label}
                                         <Select.ItemIndicator />
                                     </Select.Item>
@@ -359,10 +359,10 @@ export function Overview({
                         <XAxis axisLine={false} tickLine={false} dataKey={releaseYearChart.key("name")} />
                         <Tooltip
                             cursor={false}
-                            content={<Chart.Tooltip animationDuration={0}/>}
+                            content={<Chart.Tooltip animationDuration={0} />}
                         />
                         {releaseYearChart.series.map((item) => (
-                            <Bar key={item.name} dataKey={releaseYearChart.key(item.name)} fill={releaseYearChart.color(item.color)}>
+                            <Bar key={item.name} dataKey={releaseYearChart.key(item.name)} fill={releaseYearChart.color("brand.yellow")}>
                                 <LabelList dataKey={releaseYearChart.key(item.name)} position="top" />
                             </Bar>
                         ))}

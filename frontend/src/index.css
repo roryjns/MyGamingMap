@@ -10,5 +10,19 @@ body,
 }
 
 body {
-  font-family: system-ui, sans-serif;
+  font-family: 'rajdhani-medium', sans-serif;
+}
+
+@font-face {
+    font-family: "rajdhani-medium";
+    src: url("./assets/rajdhani.medium.ttf") format("truetype");
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "logo-font";
+    src: url("./assets/rajdhani.bold.ttf") format("truetype");
+    font-style: normal;
+    font-display: swap;
 }

@@ -11,7 +11,7 @@ type AnimatedStampProps = {
 export function AnimatedStamp({
     innerLabel,
     outerLabel,
-    color = "blue.500",
+    color = "brand.blue",
     delay = 0,
 }: AnimatedStampProps) {
     const [isVisible, setIsVisible] = useState(false)

@@ -1,6 +1,7 @@
 using MyGamingMap.API.Models.DTOs;
 using System.Diagnostics;
 using System.Text.Json;
+using MyGamingMap.API.Exceptions;
 
 namespace MyGamingMap.API.Services;
 
@@ -10,17 +11,21 @@ public class PlayerService(PSNService psnService, IGDBService igdbService, Analy
     private readonly IGDBService igdbService = igdbService;
     private readonly AnalyticsService analyticsService = analyticsService;
 
-    public async Task<Analytics> GetMap(string username)
+    public async Task<Analytics?> GetMap(string username)
     {
         var totalStopwatch = Stopwatch.StartNew();
 
         var stopwatch = Stopwatch.StartNew();
-        var games = await psnService.GetPlayerGames(username);
+        var playerResult = await psnService.GetPlayerGames(username);
         stopwatch.Stop();
         Console.WriteLine($"PSNService.GetPlayerGames: {stopwatch.ElapsedMilliseconds} ms");
 
+        if (!playerResult.Found) throw new PlayerNotFoundException();
+
+        if (playerResult.Games.Count == 0) throw new NoGamesFoundException();
+
         stopwatch.Restart();
-        var enrichedGames = await igdbService.GetEnrichedGames(games);
+        var enrichedGames = await igdbService.GetEnrichedGames(playerResult.Games);
         stopwatch.Stop();
         Console.WriteLine($"IGDBService.GetIGDBGames: {stopwatch.ElapsedMilliseconds} ms");
 
@@ -56,7 +61,6 @@ public class PlayerService(PSNService psnService, IGDBService igdbService, Analy
         }
         else
         {
-            // Starting a new benchmark, so clear previous results
             await File.WriteAllTextAsync(resultsFile, string.Empty);
             Console.WriteLine("Starting new benchmark — previous results cleared.");
         }
@@ -66,9 +70,11 @@ public class PlayerService(PSNService psnService, IGDBService igdbService, Analy
         for (int i = startIndex; successfulProfiles < 5000; i++)
         {
             var user = usernames[i];
-            var games = await psnService.GetPlayerGames(user);
-            var result = await igdbService.GetIGDBGamesBenchmark(games);
-            // eventually add analytics and map service to benchmark
+            var playerResult = await psnService.GetPlayerGames(user);
+
+            if (!playerResult.Found || playerResult.Games.Count == 0) continue;
+
+            var result = await igdbService.GetIGDBGamesBenchmark(playerResult.Games);
 
             if (result.ProfileGames > 0)
             {

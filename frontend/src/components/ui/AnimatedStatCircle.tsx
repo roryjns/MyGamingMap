@@ -83,7 +83,7 @@ export function AnimatedProgressCircle({
                     }}
                 >
                     <ProgressCircle.Track />
-                    <ProgressCircle.Range strokeLinecap="round" transition="none" stroke="blue" />
+                    <ProgressCircle.Range strokeLinecap="round" transition="none" stroke="brand.blue" />
                 </ProgressCircle.Circle>
                 <AbsoluteCenter>
                     <ProgressCircle.ValueText fontSize="2xl">

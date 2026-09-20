@@ -1,37 +1,33 @@
-import { Field, Group, Input, Text, Link } from "@chakra-ui/react"
-import { IconButton } from "@chakra-ui/react"
-import { LuSearch, LuMenu, LuMoon } from "react-icons/lu"
-import { Box, Flex, Heading, Tabs, Menu, Portal } from '@chakra-ui/react'
+import { useCallback, useState, useEffect } from "react"
+import { Text, Link, IconButton, Box, Flex, Heading, Tabs, Menu, Portal } from "@chakra-ui/react"
+import { LuMenu } from "react-icons/lu"
 import { ColorModeButton, useColorMode } from './components/ui/color-mode'
-import { InfoTip } from './components/ui/toggle-tip'
-import { useState } from "react"
-import { Spinner } from "@chakra-ui/react"
-import { lazy, Suspense } from "react"
+import { BrowserRouter, Route, Routes, Link as RouterLink, useLocation, useNavigate} from "react-router-dom"
+
+import Home from "./pages/Home"
+import FAQs from "./pages/FAQs"
+import PrivacyPolicy from "./pages/Privacy"
+import Results from "./pages/Results"
+
 import './App.css'
 
-const Map = lazy(() =>
-  import("./components/Map").then(({ Map }) => ({ default: Map }))
-)
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
+  )
+}
 
-const Journey = lazy(() =>
-  import("./components/Journey").then(({ Journey }) => ({ default: Journey }))
-)
-
-const TierList = lazy(() =>
-  import("./components/TierList").then(({ TierList }) => ({ default: TierList }))
-)
-
-const Overview = lazy(() =>
-  import("./components/Overview").then(({ Overview }) => ({ default: Overview }))
-)
-
-function App() {
-  const [username, setUsername] = useState('')
+function AppContent() {
+  const [username, setUsername] = useState("")
   const [isSearching, setIsSearching] = useState(false)
   const [searchError, setSearchError] = useState('')
   const [analytics, setAnalytics] = useState<any>(null)
-  const [activeTab, setActiveTab] = useState("map")
+  const [activeTab, setActiveTab] = useState("")
   const { toggleColorMode } = useColorMode()
+  const location = useLocation()
+  const navigate = useNavigate()
 
   const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const sanitised = e.target.value
@@ -41,77 +37,85 @@ function App() {
     setUsername(sanitised)
   }
 
-  const handleSearch = async () => {
-    if (!username) {
-      return
-    }
+  const handleSubmitSearch = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!username) return
+    setSearchError("")
+    navigate(`/${encodeURIComponent(username)}`)
+  }
 
-    setSearchError('')
+  const handleSearch = useCallback(async (searchUsername: string) => {
+    if (!searchUsername) return
+
+    setSearchError("")
     setIsSearching(true)
 
     try {
       const response = await fetch(
-        `http://localhost:5199/api/${encodeURIComponent(username)}/map`
+        `http://localhost:5199/api/${encodeURIComponent(searchUsername)}/map`
       )
 
       if (!response.ok) {
-        let message = 'Something went wrong'
+        let message = `Request failed (${response.status})`
 
         try {
           const errorData = await response.json()
-
           if (errorData.message) {
             message = errorData.message
           }
         } catch {
-          // Response wasn't JSON, so use the status below
-        }
-
-        switch (response.status) {
-          case 404:
-            message = message || 'PSN user not found'
-            break
-
-          case 409:
-            message = message || 'Analytics are already being generated for this user'
-            break
-
-          case 429:
-            message = message || 'Please wait before trying again'
-            break
-
-          case 500:
-            message = 'The server encountered an error while generating the map'
-            break
-
-          default:
-            message = `Request failed (${response.status})`
+          if (response.status === 500) {
+            message = 'The server encountered an unknown error'
+          }
         }
 
         setSearchError(message)
-        setUsername('')
+        setUsername("")
         return
       }
 
       const data = await response.json()
       setAnalytics(data)
+      setActiveTab("map")
     } catch (error) {
       setSearchError('Unable to connect to the server')
-      setUsername('')
+      setUsername("")
     } finally {
       setIsSearching(false)
     }
-  }
+  }, [])
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab)
+    location.pathname = "/:username"
     window.scrollTo(0, 0)
   }
+
+  useEffect(() => {
+    if (location.pathname === "/") {
+      setAnalytics(null)
+      setActiveTab("")
+      setUsername("")
+    } else if (
+      location.pathname === "/faqs" ||
+      location.pathname === "/privacy"
+    ) {
+      setActiveTab("")
+    }
+    window.scrollTo(0, 0)
+  }, [location.pathname])
 
   return (
     <Box minH="100vh" display="flex" flexDirection="column">
       <Flex as="header" bg="bg" position="sticky" top="0" left="0" right="0" zIndex="1000" align="center" justify="space-between" px="6" py="4" borderBottomWidth="1px">
-        <Heading size="md">MyGamingMap</Heading>
+        <RouterLink to="/">
+          <Box>
+            <Heading size="md" fontFamily="'logo-font'" fontSize="1.4rem" letterSpacing="-0.02em">MyGamingMap</Heading>
+            <svg className="logo-route" margin-top="5px" viewBox="0 0 300 35" aria-hidden="true">
+              <path d="M 8 28 Q 150 2 292 28" />
+            </svg>
+          </Box>
+        </RouterLink>
 
         {/* Desktop navigation */}
         {analytics && (
@@ -125,16 +129,15 @@ function App() {
             activationMode="manual"
             display={{ base: "none", md: "block" }}
             css={{
-              "--tabs-indicator-bg": "colors.gray.subtle",
               "--tabs-indicator-shadow": "shadows.xs",
               "--tabs-trigger-radius": "radii.full",
             }}
           >
             <Tabs.List>
-              <Tabs.Trigger fontSize="md" value="map">Map</Tabs.Trigger>
-              <Tabs.Trigger fontSize="md" value="journey">Journey</Tabs.Trigger>
-              <Tabs.Trigger fontSize="md" value="tier-list">Tier List</Tabs.Trigger>
-              <Tabs.Trigger fontSize="md" value="overview">Overview</Tabs.Trigger>
+              <Tabs.Trigger _selected={{ _dark: { bg: "brand.dark_blue", }, }} fontSize="md" value="map">Map</Tabs.Trigger>
+              <Tabs.Trigger _selected={{ _dark: { bg: "brand.dark_blue", }, }} fontSize="md" value="network">Network</Tabs.Trigger>
+              <Tabs.Trigger _selected={{ _dark: { bg: "brand.dark_blue", }, }} fontSize="md" value="tier-list">Tier List</Tabs.Trigger>
+              <Tabs.Trigger _selected={{ _dark: { bg: "brand.dark_blue", }, }} fontSize="md" value="overview">Overview</Tabs.Trigger>
               <Tabs.Indicator />
             </Tabs.List>
           </Tabs.Root>
@@ -161,120 +164,55 @@ function App() {
               <Portal>
                 <Menu.Positioner>
                   <Menu.Content>
-                    {analytics && (
-                      <>
-                        <Menu.Item value="map" onClick={() => handleTabChange("map")}>Map</Menu.Item>
-                        <Menu.Item value="journey" onClick={() => handleTabChange("journey")}>Journey</Menu.Item>
-                        <Menu.Item value="tier-list" onClick={() => handleTabChange("tier-list")}>Tier List</Menu.Item>
-                        <Menu.Item value="overview" onClick={() => handleTabChange("overview")}>Overview</Menu.Item>
-                        <Menu.Separator />
-                      </>
-                    )}
-                    <Menu.Item value="color-mode" onClick={toggleColorMode}>
-                      <Flex align="center" gap="2">
-                        <Text>Toggle Colour Mode</Text>
-                      </Flex>
-                    </Menu.Item>
+                    <Menu.Item value="map" onClick={() => handleTabChange("map")} _highlighted={{ _dark: { bg: "brand.dark_blue" } }}>Map</Menu.Item>
+                    <Menu.Item value="network" onClick={() => handleTabChange("network")} _highlighted={{ _dark: { bg: "brand.dark_blue" } }}>Network</Menu.Item>
+                    <Menu.Item value="tier-list" onClick={() => handleTabChange("tier-list")} _highlighted={{ _dark: { bg: "brand.dark_blue" } }}>Tier List</Menu.Item>
+                    <Menu.Item value="overview" onClick={() => handleTabChange("overview")} _highlighted={{ _dark: { bg: "brand.dark_blue" } }}>Overview</Menu.Item>
+                    <Menu.Separator />
+                    <Menu.Item value="color-mode" _highlighted={{ _dark: { bg: "brand.dark_blue" } }} onClick={toggleColorMode}>Toggle Colour Mode</Menu.Item>
                   </Menu.Content>
                 </Menu.Positioner>
               </Portal>
             </Menu.Root>
           )}
         </Box>
-
       </Flex>
 
-      <Box as="main" flex="1" display="flex" flexDirection="column" justifyContent="center" p="12">
-        {!analytics && !isSearching && (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              handleSearch()
-            }}
-            style={{ width: '100%' }}
-          >
-            <Field.Root required w="100%" maxW="350px" mx="auto" invalid={!!searchError}>
-              <Group attached w="100%">
-                <Input placeholder="Enter a PSN username" value={username} onChange={handleUsernameChange} />
-                <IconButton variant="outline" aria-label="Search" onClick={handleSearch}>
-                  <LuSearch />
-                </IconButton>
-              </Group>
-              <Field.HelperText textAlign="center">
-                Account must have gaming history set to public.
-                <InfoTip>
-                  If you are the account owner: <br />
-                  1. Go to Settings on your PlayStation. <br />
-                  2. Select Users and Accounts → Privacy. <br />
-                  3. Select "View and Customize Your Privacy Settings". <br />
-                  4. Set "Who can see your gaming history" to "Anyone".
-                </InfoTip>
-              </Field.HelperText>
-              <Field.ErrorText textAlign="center">{searchError}</Field.ErrorText>
-            </Field.Root>
-          </form>
-        )}
-
-        {isSearching && (
-          <Flex justify="center" align="center" flexDirection="column" gap="4">
-            <Spinner size="lg" animationDuration="0.5s" />
-            <Text color="fg.muted" textAlign="center" className="shimmer-text">Generating analytics...</Text>
-          </Flex>
-        )}
-
-        {analytics && (
-          <Suspense
-            fallback={
-              <Flex justify="center" align="center">
-                <Spinner size="lg" animationDuration="0.5s" />
-              </Flex>
-            }
-          >
-            {activeTab === "map" && (
-              <Map />
-            )}
-
-            {activeTab === "journey" && (
-              <Journey />
-            )}
-
-            {activeTab === "overview" && (
-              <Overview
-                activityAnalytics={analytics.psn.activityAnalytics}
-                trophyAnalytics={analytics.psn.trophyAnalytics}
-                gameModeAnalytics={analytics.igdb.gameModeAnalytics}
-                genreAnalytics={analytics.igdb.genreAnalytics}
-                themeAnalytics={analytics.igdb.themeAnalytics}
-                releaseYearAnalytics={analytics.igdb.releaseDateAnalytics.releaseYearAnalytics}
-              />
-            )}
-
-            {activeTab === "tier-list" && (
-              <TierList
-                ratingTiers={analytics.igdb.reviewRatingAnalytics.ratingTiers}
-                averageReviewRating={analytics.igdb.reviewRatingAnalytics.averageReviewRating}
-                averageReviewTier={analytics.igdb.reviewRatingAnalytics.averageReviewTier}
-              />
-            )}
-          </Suspense>
-        )}
+      <Box as="main" flex="1" display="flex" width="100%" mx="auto" flexDirection="column" p="10">
+        <Routes>
+          <Route path="/" element={
+            <Home username={username} searchError={searchError} handleUsernameChange={handleUsernameChange} handleSubmit={handleSubmitSearch} />
+          }
+          />
+          <Route path="/:username" element={
+            <Results
+              analytics={analytics}
+              isSearching={isSearching}
+              searchError={searchError}
+              activeTab={activeTab}
+              handleSearch={handleSearch} />
+          } />
+          <Route path="/faqs" element={<FAQs />} />
+          <Route path="/privacy" element={<PrivacyPolicy />} />
+        </Routes>
       </Box>
 
-      <Flex as="footer" direction="column" align="center" gap="3" px="6" py="4" borderTopWidth="1px">
+      <Flex as="footer" direction="column" align="center" px="6" py="5" borderTopWidth="1px">
         <Flex width="100%" direction={{ base: "column", md: "row" }} align="center" justify="space-between" gap="2">
-          <Text color="fg.muted" textAlign="center">© 2026 MyGamingMap. All Rights Reserved.</Text>
+          <Text color="fg.muted" textAlign="center">
+            © {new Date().getFullYear()} MyGamingMap. MyGamingMap is not affiliated with Sony or PlayStation in any way.
+          </Text>
           <Flex gap="4">
-            <Link href="#">FAQs</Link>
-            <Link href="#">Privacy</Link>
-            <Link href="#">Contact</Link>
+            <Link asChild>
+              <RouterLink to="/faqs">FAQs</RouterLink>
+            </Link>
+            <Link asChild>
+              <RouterLink to="/privacy">Privacy</RouterLink>
+            </Link>
+            <Link href="mailto:contact@mygamingmap.com">Contact</Link>
           </Flex>
         </Flex>
-        <Text fontSize="xs" color="fg.muted" textAlign="center">
-          MyGamingMap is not affiliated with Sony or PlayStation in any way.
-        </Text>
       </Flex>
-    </Box >
+    </Box>
   )
 }
-
-export default App

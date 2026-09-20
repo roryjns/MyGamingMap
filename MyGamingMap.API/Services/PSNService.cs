@@ -4,6 +4,12 @@ using System.Text.Json;
 
 namespace MyGamingMap.API.Services;
 
+public class PlayerGamesResult
+{
+    public bool Found { get; set; }
+    public List<PlayerGame> Games { get; set; } = [];
+}
+
 public class PSNService
 {
     private static readonly JsonSerializerOptions s_jsonSerializerOptions = new()
@@ -13,7 +19,7 @@ public class PSNService
 
     private const string CachePath = "../psn-service/debug/playerGames.json";
 
-    public async Task<List<PlayerGame>> GetPlayerGames(string username, bool useCache = false)
+    public async Task<PlayerGamesResult> GetPlayerGames(string username, bool useCache = false)
     {
         if (useCache && File.Exists(CachePath))
         {
@@ -21,10 +27,10 @@ public class PSNService
 
             var json = await File.ReadAllTextAsync(CachePath);
 
-            return JsonSerializer.Deserialize<List<PlayerGame>>(
+            return JsonSerializer.Deserialize<PlayerGamesResult>(
                 json,
                 s_jsonSerializerOptions
-            ) ?? [];
+            ) ?? new PlayerGamesResult();
         }
 
         var process = new Process
@@ -49,10 +55,10 @@ public class PSNService
         if (!string.IsNullOrWhiteSpace(error)) Console.WriteLine(error);
 
         if (process.ExitCode != 0) throw new Exception(error);
-        
-        return JsonSerializer.Deserialize<List<PlayerGame>>(
+
+        return JsonSerializer.Deserialize<PlayerGamesResult>(
             output,
             s_jsonSerializerOptions
-        ) ?? [];
+        ) ?? new PlayerGamesResult();
     }
 }

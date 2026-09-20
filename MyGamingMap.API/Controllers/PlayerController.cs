@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using MyGamingMap.API.Services;
+using MyGamingMap.API.Exceptions;
 
 namespace MyGamingMap.API.Controllers;
 
@@ -51,6 +52,20 @@ public class PlayerController(PlayerService playerService, RateLimiter rateLimit
             var result = await playerService.GetMap(username);
 
             return Ok(result);
+        }
+        catch (PlayerNotFoundException ex)
+        {
+            return NotFound(new
+            {
+                message = ex.Message
+            });
+        }
+        catch (NoGamesFoundException ex)
+        {
+            return UnprocessableEntity(new
+            {
+                message = ex.Message
+            });
         }
         finally
         {

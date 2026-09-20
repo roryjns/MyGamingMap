@@ -1,14 +1,14 @@
 import { Text, Box, Heading } from "@chakra-ui/react"
 
-type JourneyProps = {
+type NetworkProps = {
 
 }
 
-export function Journey({ }: JourneyProps) {
+export function Network({ }: NetworkProps) {
     return (
-        <Box width="100%">
+        <Box>
             <Box mb="12" textAlign="center">
-                <Heading className="page-title">Journey</Heading>
+                <Heading className="page-title">Network</Heading>
                 <Text className="page-subtitle">Your gaming history.</Text>
             </Box>
         </Box>

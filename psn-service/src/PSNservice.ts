@@ -5,6 +5,11 @@ import "dotenv/config";
 
 const AUTH_CACHE_PATH = path.resolve("psnAuthCache.json");
 
+type PlayerGamesResult = {
+  found: boolean;
+  games: any;
+};
+
 if (process.argv[2]) {
   const username = process.argv[2];
 
@@ -19,13 +24,12 @@ if (process.argv[2]) {
   }
 }
 
-export async function getPlayerGames(username: string) {
+export async function getPlayerGames(username: string): Promise<PlayerGamesResult> {
   const auth = await authorization();
 
   try {
     const user = await getUser(auth.accessToken, username);
     const accountId = user.accountId;
-    const isOwnProfile = user.username.toLowerCase() === "me" || user.username.toLowerCase() === "eternitype_";
 
     let start = performance.now();
     const playData = await getUserPlayData(auth.accessToken, accountId);
@@ -39,17 +43,17 @@ export async function getPlayerGames(username: string) {
     const playerGames = await mergePlayAndTrophyData(auth.accessToken, accountId, playData, trophyData);
     console.error(`mergePlayAndTrophyData: ${(performance.now() - start).toFixed(0)} ms`);
 
-    return playerGames;
+    return { found: true, games: playerGames };
   }
   catch (error: any) {
     if (error?.message?.includes("User not found")) {
-      console.error("User cannot be found. Skipping profile.");
-      return [];
+      console.error("User cannot be found.");
+      return { found: false, games: [] };
     }
 
     if (error?.message?.includes("hidden his or her games")) {
       console.error("User has hidden their games. Skipping profile.");
-      return [];
+      return { found: true, games: [] };
     }
 
     throw error;
@@ -310,7 +314,7 @@ async function getUserTrophiesForSpecificTitle(accessToken: string, accountId: s
 
 async function mergePlayAndTrophyData(accessToken: string, accountId: string, playedGames: any[], userTitles: any[]) {
   if (playedGames.length == 0 && userTitles.length == 0) {
-    console.error("Could not find any game data for this user. Their games and trophy data are likely set to private.")
+    console.error("Could not find any game data for this user. Their gaming history is likely set to private.")
     return;
   }
 
