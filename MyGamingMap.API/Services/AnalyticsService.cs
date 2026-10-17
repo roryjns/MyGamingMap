@@ -2,17 +2,16 @@ using MyGamingMap.API.Models.DTOs;
 
 namespace MyGamingMap.API.Services;
 
-public class AnalyticsService(PSNAnalyticsService psnAnalyticsService, IGDBAnalyticsService iGDBAnalyticsService)
+public class AnalyticsService()
 {
-    private readonly PSNAnalyticsService psnAnalyticsService = psnAnalyticsService;
-    private readonly IGDBAnalyticsService iGDBAnalyticsService = iGDBAnalyticsService;
-
     public async Task<Analytics> GenerateAnalytics(List<EnrichedPlayerGame> enrichedPlayerGames)
     {
+        var distinctGames = EnrichedGameHelper.MergeByConceptId(enrichedPlayerGames);
+
         return new Analytics
         {
-            PSN = psnAnalyticsService.CalculatePSNAnalytics(enrichedPlayerGames),
-            IGDB = await iGDBAnalyticsService.CalculateIGDBAnalytics(enrichedPlayerGames)
+            Map = MapService.GetMap(enrichedPlayerGames, distinctGames),
+            TierList = IGDBAnalyticsService.CalculateReviewRatingAnalytics(enrichedPlayerGames).TierList,
         };
     }
 }

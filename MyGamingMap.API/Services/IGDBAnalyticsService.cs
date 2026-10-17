@@ -2,21 +2,11 @@ using MyGamingMap.API.Models.DTOs;
 
 namespace MyGamingMap.API.Services;
 
-public class IGDBAnalyticsService(DatabaseService databaseService)
+public static class IGDBAnalyticsService
 {
-    private readonly DatabaseService databaseService = databaseService;
-    private int franchiseCount;
-    private int gameEngineCount;
-    private int genreCount;
-    private int themeCount;
-    private int developerCount;
-    private int publisherCount;
-
-    public async Task<IGDB_Analytics> CalculateIGDBAnalytics(IEnumerable<EnrichedPlayerGame> enrichedGames)
+    public static IGDBAnalytics CalculateIGDBAnalytics(IEnumerable<EnrichedPlayerGame> enrichedGames)
     {
-        var games = enrichedGames
-            .Where(g => g.IGDBGame != null)
-            .ToList();
+        var games = WithIGDB(enrichedGames);
 
         /*
         foreach (var game in games)
@@ -27,37 +17,37 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
 
         var distinctGames = EnrichedGameHelper.MergeByConceptId(games);
 
-        franchiseCount = distinctGames
+        var franchiseCount = distinctGames
                     .SelectMany(g => g.IGDBGame!.Franchises)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .Count();
 
-        gameEngineCount = distinctGames
+        var gameEngineCount = distinctGames
                     .SelectMany(g => g.IGDBGame!.GameEngines)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .Count();
 
-        genreCount = distinctGames
+        var genreCount = distinctGames
                     .SelectMany(g => g.IGDBGame!.Genres)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .Count();
 
-        themeCount = distinctGames
+        var themeCount = distinctGames
                     .SelectMany(g => g.IGDBGame!.Themes)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .Count();
 
-        developerCount = distinctGames
+        var developerCount = distinctGames
                     .SelectMany(g => g.IGDBGame!.Developers)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .Count();
 
-        publisherCount = distinctGames
+        var publisherCount = distinctGames
                     .SelectMany(g => g.IGDBGame!.Publishers)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .Count();
 
-        var analytics = new IGDB_Analytics
+        var analytics = new IGDBAnalytics
         {
             Summary = new Summary
             {
@@ -69,27 +59,31 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
                 PublisherCount = publisherCount
             },
 
-            FranchiseAnalytics = CalculateFranchiseAnalytics(games), // Preserves platform specific completion data
-            GameEngineAnalytics = CalculateGameEngineAnalytics(games),
+            FranchiseAnalytics = CalculateFranchiseAnalytics(games, franchiseCount), // Preserves platform specific completion data
+            GameEngineAnalytics = CalculateGameEngineAnalytics(games, gameEngineCount),
             GameModeAnalytics = CalculateGameModeAnalytics(games),
             GenreAnalytics = CalculateGenreAnalytics(games),
             ThemeAnalytics = CalculateThemeAnalytics(games),
-            DeveloperAnalytics = CalculateDeveloperAnalytics(games),
-            PublisherAnalytics = CalculatePublisherAnalytics(games),
+            DeveloperAnalytics = CalculateDeveloperAnalytics(games, developerCount),
+            PublisherAnalytics = CalculatePublisherAnalytics(games, publisherCount),
             AgeRatingAnalytics = CalculateAgeRatingAnalytics(games),
             ReleaseDateAnalytics = CalculateReleaseDateAnalytics(games), // Preserves platform specific release dates
-            ReviewRatingAnalytics = CalculateReviewRatingAnalytics(games, distinctGames)
+            ReviewRatingAnalytics = CalculateReviewRatingAnalytics(games)
         };
 
-        analytics.TasteProfile = CalculateTasteProfile(analytics);
-        analytics.TasteProfile.UnexploredGenres = await databaseService.GetUnexploredGenres(distinctGames);
-        analytics.TasteProfile.UnexploredThemes = await databaseService.GetUnexploredThemes(distinctGames);
+        //analytics.UnexploredGenres = await databaseService.GetUnexploredGenres(distinctGames);
+        //analytics.UnexploredThemes = await databaseService.GetUnexploredThemes(distinctGames);
 
         return analytics;
     }
 
-    private List<FranchiseAnalytic> CalculateFranchiseAnalytics(IEnumerable<EnrichedPlayerGame> games)
+    private static List<EnrichedPlayerGame> WithIGDB(IEnumerable<EnrichedPlayerGame> games)
+        => [.. games.Where(g => g.IGDBGame is not null)];
+
+    public static List<FranchiseAnalytic> CalculateFranchiseAnalytics(IEnumerable<EnrichedPlayerGame> games, int franchiseCount)
     {
+        games = WithIGDB(games);
+
         var gameList = games.ToList();
 
         // Get the unique set of games associated with each franchise
@@ -145,9 +139,11 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
 
         var topFranchisesCount = franchiseCount switch
         {
-            < 15 => 1,
-            < 25 => 3,
-            < 50 => 5,
+            < 5 => 1,
+            < 10 => 2,
+            < 15 => 3,
+            < 25 => 4,
+            < 30 => 5,
             _ => 10
         };
 
@@ -160,8 +156,6 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
             (name, categoryGames) => new FranchiseAnalytic
             {
                 Name = name,
-
-                GamesStartedPerYear = CalculateGamesStartedPerYear(categoryGames),
 
                 MostPlayedGames = CalculateMostPlayedGames(EnrichedGameHelper.MergeByConceptId(categoryGames)),
 
@@ -177,8 +171,10 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
             .Take(topFranchisesCount)];
     }
 
-    private List<GameEngineAnalytic> CalculateGameEngineAnalytics(IEnumerable<EnrichedPlayerGame> games)
+    private static List<GameEngineAnalytic> CalculateGameEngineAnalytics(IEnumerable<EnrichedPlayerGame> games, int gameEngineCount)
     {
+        games = WithIGDB(games);
+
         var topGameEnginesCount = gameEngineCount switch
         {
             < 15 => 1,
@@ -199,8 +195,10 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
         .Take(topGameEnginesCount)];
     }
 
-    private static List<GameModeAnalytic> CalculateGameModeAnalytics(IEnumerable<EnrichedPlayerGame> games)
+    public static List<GameModeAnalytic> CalculateGameModeAnalytics(IEnumerable<EnrichedPlayerGame> games)
     {
+        games = WithIGDB(games);
+
         return [.. CalculateCategoryAnalytics(
             games,
             game =>
@@ -237,42 +235,50 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
         .OrderByDescending(x => x.CategoryRelevance)];
     }
 
-    private static List<GenreAnalytic> CalculateGenreAnalytics(IEnumerable<EnrichedPlayerGame> games)
+    public static List<GenreAnalytic> CalculateGenreAnalytics(IEnumerable<EnrichedPlayerGame> games)
     {
+        games = WithIGDB(games);
+
         return [.. CalculateCategoryAnalytics(
             games,
             game => game.IGDBGame!.Genres,
             (name, categoryGames) => new GenreAnalytic
             {
                 Name = name,
-                GamesStartedPerYear = CalculateGamesStartedPerYear(categoryGames),
+                //GamesStartedPerYear = CalculateGamesStartedPerYear(categoryGames),
                 MostPlayedGames = CalculateMostPlayedGames(categoryGames),
             }
         )
         .OrderByDescending(x => x.CategoryRelevance)];
     }
 
-    private static List<ThemeAnalytic> CalculateThemeAnalytics(IEnumerable<EnrichedPlayerGame> games)
+    public static List<ThemeAnalytic> CalculateThemeAnalytics(IEnumerable<EnrichedPlayerGame> games)
     {
+        games = WithIGDB(games);
+
         return [.. CalculateCategoryAnalytics(
             games,
             game => game.IGDBGame!.Themes,
             (name, categoryGames) => new ThemeAnalytic
             {
                 Name = name,
-                GamesStartedPerYear = CalculateGamesStartedPerYear(categoryGames),
+                //GamesStartedPerYear = CalculateGamesStartedPerYear(categoryGames),
                 MostPlayedGames = CalculateMostPlayedGames(categoryGames),
             }
         )
         .OrderByDescending(x => x.CategoryRelevance)];
     }
 
-    private List<CompanyAnalytic> CalculateDeveloperAnalytics(IEnumerable<EnrichedPlayerGame> games)
+    public static List<CompanyAnalytic> CalculateDeveloperAnalytics(IEnumerable<EnrichedPlayerGame> games, int developerCount)
     {
+        games = WithIGDB(games);
+
         var topDevelopersCount = developerCount switch
         {
-            < 15 => 1,
-            < 25 => 3,
+            < 5 => 1,
+            < 10 => 2,
+            < 15 => 3,
+            < 25 => 4,
             < 50 => 5,
             _ => 10
         };
@@ -297,12 +303,16 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
         .Take(topDevelopersCount)];
     }
 
-    private List<CompanyAnalytic> CalculatePublisherAnalytics(IEnumerable<EnrichedPlayerGame> games)
+    public static List<CompanyAnalytic> CalculatePublisherAnalytics(IEnumerable<EnrichedPlayerGame> games, int publisherCount)
     {
+        games = WithIGDB(games);
+
         var topPublishersCount = publisherCount switch
         {
-            < 15 => 1,
-            < 25 => 3,
+            < 5 => 1,
+            < 10 => 2,
+            < 15 => 3,
+            < 25 => 4,
             < 50 => 5,
             _ => 10
         };
@@ -319,9 +329,9 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
         .Take(topPublishersCount)];
     }
 
-    private static AgeRatingAnalytics CalculateAgeRatingAnalytics(IEnumerable<EnrichedPlayerGame> games)
+    public static AgeRatingAnalytics CalculateAgeRatingAnalytics(IEnumerable<EnrichedPlayerGame> games)
     {
-        var gameList = games.ToList();
+        var gameList = WithIGDB(games);
 
         var pegiRatings = gameList
             .Where(g =>
@@ -350,7 +360,7 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
                 (name, categoryGames) => new AgeRatingAnalytic
                 {
                     Name = name,
-                    GamesStartedPerYear = CalculateGamesStartedPerYear(categoryGames),
+                    //GamesStartedPerYear = CalculateGamesStartedPerYear(categoryGames),
                 }
             )
             .OrderByDescending(x => x.CategoryRelevance)],
@@ -364,7 +374,7 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
                 (name, categoryGames) => new AgeRatingAnalytic
                 {
                     Name = name,
-                    GamesStartedPerYear = CalculateGamesStartedPerYear(categoryGames),
+                    //GamesStartedPerYear = CalculateGamesStartedPerYear(categoryGames),
                 }
             )
             .OrderByDescending(x => x.CategoryRelevance)],
@@ -380,11 +390,12 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
         };
     }
 
-    private static ReleaseDateAnalytics CalculateReleaseDateAnalytics(IEnumerable<EnrichedPlayerGame> games)
+    public static ReleaseDateAnalytics CalculateReleaseDateAnalytics(IEnumerable<EnrichedPlayerGame> games, IEnumerable<EnrichedPlayerGame>? gamesStarted = null)
     {
+        games = WithIGDB(games);
         var gameList = games.ToList();
 
-        var releaseDates = gameList.ToDictionary(game => game, GetReleaseDate);
+        var releaseDates = gameList.ToDictionary(game => game, GameMetadataService.GetReleaseDate);
 
         var gamesWithReleaseDates = gameList
             .Where(g => releaseDates[g].HasValue)
@@ -404,8 +415,6 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
             })
             .Where(x => x.GapDays >= 0)
             .ToList();
-
-        const int ReleaseGapGamesCount = 5;
 
         return new ReleaseDateAnalytics
         {
@@ -433,7 +442,7 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
 
             PlayedSoonAfterRelease = [..gaps
             .OrderBy(x => x.GapDays)
-            .Take(ReleaseGapGamesCount)
+            .Where (x => x.GapDays <= 30) // Only include games started within first month of release
             .Select(x => new ReleaseGapGame
              {
                  Game = x.Game,
@@ -443,7 +452,7 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
 
             PlayedLongAfterRelease = [..gaps
             .OrderByDescending(x => x.GapDays)
-            .Take(ReleaseGapGamesCount)
+            .Where(x => x.GapDays >= 1825) // Only include games started at least 5 years after release
             .Select(x => new ReleaseGapGame
              {
                  Game = x.Game,
@@ -453,13 +462,13 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
         };
     }
 
-    private static ReviewRatingAnalytics CalculateReviewRatingAnalytics(IEnumerable<EnrichedPlayerGame> games, IEnumerable<EnrichedPlayerGame> distinctGames)
+    public static ReviewRatingAnalytics CalculateReviewRatingAnalytics(IEnumerable<EnrichedPlayerGame> games, int? maxGamesPerTier = null)
     {
         var gamesWithRatings = games
             .Where(g => g.IGDBGame?.ReviewRating.HasValue == true)
             .ToList();
 
-        var distinctGamesWithRatings = distinctGames
+        var distinctGamesWithRatings = EnrichedGameHelper.MergeByConceptId(games) // distinct games
             .Where(g => g.IGDBGame?.ReviewRating.HasValue == true)
             .ToList();
 
@@ -486,6 +495,8 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
                         g.IGDBGame.ReviewRating.Value < tier.Max)
                     .ToList();
 
+                if (maxGamesPerTier != null) allTierGames = [.. allTierGames.Take(maxGamesPerTier.Value)];
+
                 // Calculate analytics against the entire rated game set,
                 // but only assign games belonging to this tier to the category.
                 var analytics = CalculateCategoryAnalytics(
@@ -504,7 +515,7 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
                     }
                 ).ToList();
 
-                const int MaxGamesPerTier = 92; // 4 rows of 23 on my monitor
+                const int MaxGamesPerTier = 92; // 4 rows of 23 on a standard 1080p monitor with no zoom
 
                 // Only merge the games that are actually stored.
                 foreach (var tierAnalytics in analytics)
@@ -551,8 +562,6 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
             .OrderBy(x => x)
             .ToList();
 
-        var totalPlaytime = gamesWithPlaytime.Sum(g => g.PlayerGame.PlayHours!.Value);
-
         const double HighPercentile = 0.75;
         const double LowPercentile = 0.25;
 
@@ -566,10 +575,12 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
 
         return new ReviewRatingAnalytics
         {
-            AverageReviewRating = averageReviewRating,
-            AverageReviewTier = averageReviewTier,
-
-            RatingTiers = [.. ratingTiers],
+            TierList = new TierList
+            {
+                AverageReviewRating = averageReviewRating,
+                AverageReviewTier = averageReviewTier,
+                RatingTiers = [.. ratingTiers],
+            },
 
             HighestRatedGames = [..distinctGamesWithRatings
             .OrderByDescending(g => g.IGDBGame!.ReviewRating!.Value)
@@ -726,63 +737,10 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
 
                 analytic.CategoryRelevance = (analytic.Breadth * 0.5) + (analytic.Investment * 0.5);
 
-                //analytic.Games = categoryGames;
-
                 return analytic;
             });
 
         return [.. results];
-    }
-
-    private static TasteProfile CalculateTasteProfile(IGDB_Analytics analytics)
-    {
-        var ageRatingAnalytics = analytics.AgeRatingAnalytics ?? new AgeRatingAnalytics();
-
-        return new TasteProfile
-        {
-            Genres = CalculateCategoryTasteProfile(analytics.GenreAnalytics),
-            Themes = CalculateCategoryTasteProfile(analytics.ThemeAnalytics),
-            GameModes = CalculateCategoryTasteProfile(analytics.GameModeAnalytics, 1),
-            ESRBRating = CalculateCategoryTasteProfile(ageRatingAnalytics.ESRBRatingAnalytics, 1),
-            PEGIRating = CalculateCategoryTasteProfile(ageRatingAnalytics.PEGIRatingAnalytics, 1),
-        };
-    }
-
-    private static TasteProfileCategory CalculateCategoryTasteProfile(IEnumerable<CategoryAnalytic>? categories, int topCategoryCount = 2)
-    {
-        var categoryList = categories ?? [];
-
-        var orderedCategories = categoryList
-        .Where(x => x.CategoryRelevance > 0)
-        .OrderByDescending(x => x.CategoryRelevance)
-        .ToList();
-
-        if (orderedCategories.Count == 0) return new TasteProfileCategory();
-
-        var maxRelevance = orderedCategories[0].CategoryRelevance;
-        var totalRelevance = orderedCategories.Sum(x => x.CategoryRelevance);
-
-        // 1 = strongest category of that type, 0.25 = 25% as relevant as the strongest category
-        var evidence = orderedCategories
-            .Where(x => x.CategoryRelevance / maxRelevance >= 0.25)
-            .Take(topCategoryCount)
-            .Select(x => new TastePreference
-            {
-                Name = x.Name,
-                Relevance = x.CategoryRelevance
-            })
-            .ToList();
-
-        var evidenceRelevance = evidence.Sum(x => x.Relevance);
-
-        return new TasteProfileCategory
-        {
-            Coverage = totalRelevance > 0
-                ? evidenceRelevance / totalRelevance * 100
-                : 0,
-
-            Evidence = evidence
-        };
     }
 
     private static List<MostPlayedGame> CalculateMostPlayedGames(IEnumerable<EnrichedPlayerGame> games)
@@ -838,7 +796,9 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
 
     private static long GetConceptGroupKey(EnrichedPlayerGame game)
     {
-        return game.PlayerGame.ConceptId ?? game.IGDBGame!.IGDB_Id;
+        return game.PlayerGame.ConceptId
+            ?? game.IGDBGame?.IGDB_Id
+            ?? 0;   // last-resort fallback for a game with neither ID
     }
 
     private static double CalculateAverage(IEnumerable<double> values)
@@ -859,83 +819,6 @@ public class IGDBAnalyticsService(DatabaseService databaseService)
         return ordered.Count % 2 == 0
             ? (ordered[middle - 1] + ordered[middle]) / 2
             : ordered[middle];
-    }
-
-    private static DateOnly? GetReleaseDate(EnrichedPlayerGame game)
-    {
-        var releaseDates = game.IGDBGame?.ReleaseDates;
-
-        if (releaseDates == null || releaseDates.Count == 0) return null;
-
-        var firstPlayed = game.PlayerGame.FirstPlayed?.Date;
-
-        // First prioritise the player's platform.
-        var platformDates = releaseDates
-            .Where(r =>
-                r.Date.HasValue &&
-                string.Equals(
-                    r.Platform,
-                    game.PlayerGame.Platform,
-                    StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-        // If there are no release dates for that platform,
-        // fall back to release dates for all platforms.
-        var candidates = platformDates.Count > 0
-            ? platformDates
-            : [.. releaseDates.Where(r => r.Date.HasValue)];
-
-        if (candidates.Count == 0) return null;
-
-        // If we know when the player first played, first check for
-        // a release date on exactly that date.
-        if (firstPlayed.HasValue)
-        {
-            var firstPlayedDate = DateOnly.FromDateTime(firstPlayed.Value);
-
-            var exactMatch = candidates
-                .Where(r => r.Date!.Value == firstPlayedDate)
-                .ToList();
-
-            if (exactMatch.Count > 0)
-            {
-                var worldwideExactMatch = exactMatch
-                    .Where(r =>
-                        string.Equals(
-                            r.Region,
-                            "worldwide",
-                            StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-
-                return (worldwideExactMatch.Count > 0
-                        ? worldwideExactMatch
-                        : exactMatch)
-                    .First()
-                    .Date;
-            }
-
-            // Otherwise, only consider releases before the player first played.
-            candidates = [.. candidates.Where(r => r.Date!.Value < firstPlayedDate)];
-
-            if (candidates.Count == 0) return null;
-        }
-
-        // Prefer worldwide when multiple release dates are otherwise valid.
-        var worldwide = candidates
-            .Where(r =>
-                string.Equals(
-                    r.Region,
-                    "worldwide",
-                    StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-        if (worldwide.Count > 0) candidates = worldwide;
-
-        // Choose the earliest possible release date.
-        return candidates
-            .OrderBy(r => r.Date)
-            .First()
-            .Date;
     }
 
     private static DateOnly CalculateAverageReleaseDate(IEnumerable<DateOnly> releaseDates)

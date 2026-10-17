@@ -3,6 +3,7 @@
     "dependencies": {
         "dotenv": "^17.4.2",
         "express": "^5.2.1",
+        "nodemailer": "^10.1.1",
         "psn-api": "^2.18.0"
     },
     "devDependencies": {

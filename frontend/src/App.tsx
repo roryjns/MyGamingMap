@@ -52,7 +52,7 @@ function AppContent() {
 
     try {
       const response = await fetch(
-        `http://localhost:5199/api/${encodeURIComponent(searchUsername)}/map`
+        `http://localhost:5199/api/${encodeURIComponent(searchUsername)}/analytics`
       )
 
       if (!response.ok) {
@@ -76,7 +76,7 @@ function AppContent() {
 
       const data = await response.json()
       setAnalytics(data)
-      setActiveTab("map")
+      setActiveTab("network")
     } catch (error) {
       setSearchError('Unable to connect to the server')
       setUsername("")

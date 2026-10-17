@@ -11,12 +11,13 @@ public class PlayerService(PSNService psnService, IGDBService igdbService, Analy
     private readonly IGDBService igdbService = igdbService;
     private readonly AnalyticsService analyticsService = analyticsService;
 
-    public async Task<Analytics?> GetMap(string username)
+    public async Task<Analytics?> GetAnalytics(string username)
     {
         var totalStopwatch = Stopwatch.StartNew();
 
         var stopwatch = Stopwatch.StartNew();
         var playerResult = await psnService.GetPlayerGames(username);
+        ThrowIfPSNFailed(playerResult);
         stopwatch.Stop();
         Console.WriteLine($"PSNService.GetPlayerGames: {stopwatch.ElapsedMilliseconds} ms");
 
@@ -43,6 +44,27 @@ public class PlayerService(PSNService psnService, IGDBService igdbService, Analy
         Console.WriteLine($"Total GetMap execution: {totalStopwatch.ElapsedMilliseconds} ms");
         return analytics;
         //return map;
+    }
+
+    public async Task<Map> GetMap(string username)
+    {
+        var playerResult = await psnService.GetPlayerGames(username);
+
+        ThrowIfPSNFailed(playerResult);
+
+        if (!playerResult.Found) throw new PlayerNotFoundException();
+
+        if (playerResult.Games.Count == 0) throw new NoGamesFoundException();
+
+        var enrichedGames = await igdbService.GetEnrichedGames(playerResult.Games);
+        var distinctGames = EnrichedGameHelper.MergeByConceptId(enrichedGames);
+
+        var stopwatch = Stopwatch.StartNew();
+        var map = MapService.GetMap(enrichedGames, distinctGames);
+        stopwatch.Stop();
+        Console.WriteLine($"Total GetMap execution: {stopwatch.ElapsedMilliseconds} ms");
+
+        return map;
     }
 
     public async Task BenchmarkTest()
@@ -72,6 +94,8 @@ public class PlayerService(PSNService psnService, IGDBService igdbService, Analy
             var user = usernames[i];
             var playerResult = await psnService.GetPlayerGames(user);
 
+            ThrowIfPSNFailed(playerResult);
+
             if (!playerResult.Found || playerResult.Games.Count == 0) continue;
 
             var result = await igdbService.GetIGDBGamesBenchmark(playerResult.Games);
@@ -98,5 +122,19 @@ public class PlayerService(PSNService psnService, IGDBService igdbService, Analy
 
         File.Delete(progressFile);
         Console.WriteLine("Benchmark test complete");
+    }
+
+    public async Task RefreshNPSSO(string npsso)
+    {
+        await psnService.RefreshNPSSO(npsso);
+    }
+
+    private static void ThrowIfPSNFailed(PlayerGamesResult playerResult)
+    {
+        if (playerResult.Found) return;
+
+        if (playerResult.Auth != null && playerResult.Auth == false) throw new PSNAuthenticationFailed();
+
+        throw new PlayerNotFoundException();
     }
 }

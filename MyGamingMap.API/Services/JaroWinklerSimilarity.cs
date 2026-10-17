@@ -4,11 +4,9 @@ public static class StringSimilarity
 {
     public static double JaroWinkler(string s1, string s2)
     {
-        if (s1 == s2)
-            return 1.0;
+        if (s1 == s2) return 1.0;
 
-        if (string.IsNullOrEmpty(s1) || string.IsNullOrEmpty(s2))
-            return 0.0;
+        if (string.IsNullOrEmpty(s1) || string.IsNullOrEmpty(s2)) return 0.0;
 
         int len1 = s1.Length;
         int len2 = s2.Length;
@@ -28,12 +26,8 @@ public static class StringSimilarity
 
             for (int j = start; j < end; j++)
             {
-                if (s2Matches[j])
-                    continue;
-
-                if (s1[i] != s2[j])
-                    continue;
-
+                if (s2Matches[j]) continue;
+                if (s1[i] != s2[j]) continue;
                 s1Matches[i] = true;
                 s2Matches[j] = true;
                 matches++;
@@ -41,8 +35,7 @@ public static class StringSimilarity
             }
         }
 
-        if (matches == 0)
-            return 0.0;
+        if (matches == 0) return 0.0;
 
         // Count transpositions
         int k = 0;
@@ -50,31 +43,21 @@ public static class StringSimilarity
 
         for (int i = 0; i < len1; i++)
         {
-            if (!s1Matches[i])
-                continue;
-
-            while (!s2Matches[k])
-                k++;
-
-            if (s1[i] != s2[k])
-                transpositions++;
-
+            if (!s1Matches[i]) continue;
+            while (!s2Matches[k]) k++;
+            if (s1[i] != s2[k]) transpositions++;
             k++;
         }
 
         double m = matches;
 
-        double jaro =
-            (m / len1 +
-             m / len2 +
-             (m - transpositions / 2.0) / m) / 3.0;
+        double jaro = (m / len1 + m / len2 + (m - transpositions / 2.0) / m) / 3.0;
 
         // Winkler prefix bonus
         int prefix = 0;
         int prefixLimit = Math.Min(4, Math.Min(len1, len2));
 
-        while (prefix < prefixLimit && s1[prefix] == s2[prefix])
-            prefix++;
+        while (prefix < prefixLimit && s1[prefix] == s2[prefix]) prefix++;
 
         return jaro + prefix * 0.1 * (1.0 - jaro);
     }

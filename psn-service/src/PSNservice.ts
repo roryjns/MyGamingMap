@@ -1,33 +1,51 @@
 import fs from "fs";
-import path from "path";
 import psn from "psn-api";
-import "dotenv/config";
-
-const AUTH_CACHE_PATH = path.resolve("psnAuthCache.json");
+import { authorisation, refreshNpsso } from "./Authorisation.js";
 
 type PlayerGamesResult = {
+  auth?: boolean,
   found: boolean;
   games: any;
 };
 
-if (process.argv[2]) {
+if (process.argv[2] === "refresh-npsso") {
+  // Refresh flow — read stdin, verify NPSSO, update .env
+  const npsso = await readStdin();
+
+  try {
+    await refreshNpsso(npsso);
+    console.log(JSON.stringify({ ok: true }));
+    process.exit(0);
+  } catch (error: any) {
+    console.error(error);
+    console.log(JSON.stringify({
+      ok: false,
+      error: error?.message ?? "unknown",
+    }));
+    process.exit(1);
+  }
+} else if (process.argv[2]) {
+  // Get-player-games flow
   const username = process.argv[2];
 
   try {
     const playerGames = await getPlayerGames(username);
-    if (playerGames == null) console.log(JSON.stringify([]));
-    else console.log(JSON.stringify(playerGames))
+    console.log(JSON.stringify(playerGames));
     process.exit(0);
   } catch (error) {
     console.error(error);
+    console.log(JSON.stringify({
+      auth: false,
+      found: false,
+      games: [],
+    }));
     process.exit(1);
   }
 }
 
 export async function getPlayerGames(username: string): Promise<PlayerGamesResult> {
-  const auth = await authorization();
-
   try {
+    const auth = await authorisation();
     const user = await getUser(auth.accessToken, username);
     const accountId = user.accountId;
 
@@ -46,66 +64,29 @@ export async function getPlayerGames(username: string): Promise<PlayerGamesResul
     return { found: true, games: playerGames };
   }
   catch (error: any) {
-    if (error?.message?.includes("User not found")) {
+    const message = error?.message ?? "";
+
+    if (message.includes("User not found")) {
       console.error("User cannot be found.");
       return { found: false, games: [] };
     }
 
-    if (error?.message?.includes("hidden his or her games")) {
+    if (message.includes("hidden his or her games")) {
       console.error("User has hidden their games. Skipping profile.");
       return { found: true, games: [] };
     }
 
+    if (
+      message.includes("problem retrieving your PSN access code") ||
+      message.includes("NPSSO") ||
+      message.includes("invalid_grant")
+    ) {
+      console.error("Authentication failed. NPSSO is likely expired or invalid. ");
+      return { auth: false, found: false, games: [] };
+    }
+
     throw error;
   }
-}
-
-async function saveAuthorization(auth: any) {
-  auth.expiresAt = Date.now() + auth.expiresIn * 1000;
-  await fs.promises.writeFile(AUTH_CACHE_PATH, JSON.stringify(auth, null, 2), "utf-8");
-}
-
-async function authorization() {
-  console.error("\nStarting PSN authorisation...");
-
-  if (fs.existsSync(AUTH_CACHE_PATH)) {
-    console.error("Found cached authorisation file");
-    const data = fs.readFileSync(AUTH_CACHE_PATH, "utf-8");
-    let cachedAuthorization = JSON.parse(data);
-    const REFRESH_BUFFER = 6 * 60 * 1000; // 8 minutes
-    const expiresIn = cachedAuthorization.expiresAt - Date.now();
-
-    if (expiresIn > REFRESH_BUFFER) {
-      console.error(`Using cached authorisation (expires in ${Math.round(expiresIn / 60000)} minutes)`);
-      return cachedAuthorization;
-    }
-
-    console.error(`Cached authorisation expires soon (${Math.round(expiresIn / 60000)} minutes), refreshing token...`);
-
-    try {
-      const refreshedAuthorization = await psn.exchangeRefreshTokenForAuthTokens(cachedAuthorization.refreshToken);
-      await saveAuthorization(refreshedAuthorization);
-      console.error("Successfully refreshed PSN authorisation");
-      return refreshedAuthorization;
-    } catch (error) {
-      console.error("Token refresh failed, falling back to NPSSO authentication");
-    }
-  } else console.error("No cached authorisation found");
-
-  console.error("Authenticating using NPSSO token...");
-  const myNpsso = process.env.PSN_NPSSO;
-
-  if (!myNpsso) {
-    console.error("Missing PSN_NPSSO environment variable");
-    throw new Error("Missing PSN_NPSSO environment variable");
-  }
-
-  const accessCode = await psn.exchangeNpssoForAccessCode(myNpsso);
-  console.error("Successfully exchanged NPSSO for access code");
-  const authorization = await psn.exchangeAccessCodeForAuthTokens(accessCode);
-  await saveAuthorization(authorization);
-  console.error("Successfully authenticated and saved new authorisation");
-  return authorization;
 }
 
 async function getUser(accessToken: string, username: string) {
@@ -447,11 +428,22 @@ async function mergePlayAndTrophyData(accessToken: string, accountId: string, pl
     });
   }
 
-  mergedGames.sort((a, b) => a.name.replace(/^The\s+/i, "").localeCompare(b.name.replace(/^The\s+/i, "")));
-  const playDataOnly = mergedGames.filter(game => (!game.trophyData || game.trophyData.length === 0) && game.playHours !== null);
-  const trophyDataOnly = mergedGames.filter(game => game.playHours === null && game.trophyData && game.trophyData.length > 0);
+  //mergedGames.sort((a, b) => a.name.replace(/^The\s+/i, "").localeCompare(b.name.replace(/^The\s+/i, "")));
+  mergedGames = mergedGames
+    .sort((a, b) => {
+      const firstPlayedComparison =
+        new Date(a.firstPlayed).getTime() - new Date(b.firstPlayed).getTime();
+
+      if (firstPlayedComparison !== 0) {
+        return firstPlayedComparison;
+      }
+
+      return new Date(a.lastPlayed).getTime() - new Date(b.lastPlayed).getTime();
+    });
+
+  const playDataOnly = mergedGames.filter(game => game.trophyData && game.trophyData.length === 0 && game.playHours !== null);
   const mergedWithTrophies = mergedGames.filter(game => game.trophyData && game.trophyData.length > 0 && game.playHours !== null);
-  console.error(`Merge complete: ${mergedGames.length} games (${mergedWithTrophies.length} merged + ${playDataOnly.length} play data only + ${trophyDataOnly.length} trophy data only)`);
+  console.error(`Merge complete: ${mergedGames.length} games (${mergedWithTrophies.length} merged + ${playDataOnly.length} play data only + ${trophyOnlyGames.length} trophy data only)`);
   await fs.promises.writeFile("./debug/playerGames.json", JSON.stringify(mergedGames, null, 2));
   return mergedGames;
 }
@@ -566,4 +558,14 @@ async function retry<T>(operation: () => Promise<T>): Promise<T> {
   }
 
   throw new Error();
+}
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk as Buffer);
+  }
+
+  return Buffer.concat(chunks).toString("utf-8").trim();
 }

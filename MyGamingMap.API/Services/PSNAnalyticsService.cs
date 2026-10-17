@@ -1,17 +1,16 @@
+using IGDB.Models;
 using MyGamingMap.API.Models.DTOs;
 
 namespace MyGamingMap.API.Services;
 
-public class PSNAnalyticsService
+public static class PSNAnalyticsService
 {
-    private const int SingleDayGamesCount = 10;
     private const int NewGameDroughtThresholdDays = 90;
-    private const int AbandonedGamesCount = 10;
     private const int minimumDaysSincePlayedForAbandoned = 60;
     private const double minimumHoursPlayedForAbandoned = 3;
     private const int maximumTrophyProgressForAbandoned = 20;
 
-    public PSNAnalytics CalculatePSNAnalytics(List<EnrichedPlayerGame> games)
+    public static PSNAnalytics CalculatePSNAnalytics(List<EnrichedPlayerGame> games)
     {
         return new PSNAnalytics
         {
@@ -20,50 +19,32 @@ public class PSNAnalyticsService
         };
     }
 
-    public ActivityAnalytics CalculateActivityAnalytics(List<EnrichedPlayerGame> games)
+    public static ActivityAnalytics CalculateActivityAnalytics(List<EnrichedPlayerGame> games)
     {
         var gamesWithPlaytime = games
             .Where(g => g.PlayerGame.PlayHours.HasValue && g.PlayerGame.PlayCount.HasValue)
             .ToList();
 
-        var playtimeDates = gamesWithPlaytime
-            .SelectMany(g => new DateTime?[]
-            {
-                g.PlayerGame.FirstPlayed,
-                g.PlayerGame.LastPlayed,
-                g.PlayerGame.TrophyData
-            .Where(t => t.LastTrophyEarned.HasValue)
-            .Select(t => t.LastTrophyEarned)
-            .FirstOrDefault()
-            })
-            .Where(d => d.HasValue)
-            .Select(d => d!.Value)
-            .ToList();
-
         var playtimeSpanDays = 0.0;
 
-        if (playtimeDates.Count > 0)
-        {
-            var firstPlaytimeDate = playtimeDates.Min();
-            var lastPlaytimeDate = playtimeDates.Max();
-            playtimeSpanDays = (lastPlaytimeDate - firstPlaytimeDate).TotalDays;
-        }
-
         var gamesWithDates = games
-            .Select(g => new
-            {
-                Game = g,
-                FirstDay = GetFirstActivityDate(g.PlayerGame),
-                LastDay = GetLastActivityDate(g.PlayerGame)
-            })
-            .Where(x => x.FirstDay.HasValue && x.LastDay.HasValue)
-            .Select(x => new GameActivityPeriod
-            {
-                Game = x.Game,
-                FirstDay = x.FirstDay!.Value,
-                LastDay = x.LastDay!.Value
-            })
-            .ToList();
+                    .Select(g => new
+                    {
+                        Game = g,
+                        FirstDay = GetFirstActivityDate(g.PlayerGame),
+                        LastDay = GetLastActivityDate(g.PlayerGame)
+                    })
+                    .Where(x => x.FirstDay.HasValue && x.LastDay.HasValue)
+                    .ToList();
+
+        if (gamesWithDates.Count > 0)
+        {
+            var firstPlaytimeDate = gamesWithDates.Min(x => x.FirstDay);
+            var lastPlaytimeDate = gamesWithDates.Max(x => x.LastDay);
+
+            if (firstPlaytimeDate.HasValue && lastPlaytimeDate.HasValue)
+                playtimeSpanDays = (lastPlaytimeDate - firstPlaytimeDate).Value.Days + 1;
+        }
 
         var totalHoursPlayed = gamesWithPlaytime.Sum(g => g.PlayerGame.PlayHours!.Value);
         var totalSessionsPlayed = gamesWithPlaytime.Sum(g => g.PlayerGame.PlayCount!.Value);
@@ -111,7 +92,7 @@ public class PSNAnalyticsService
             .Select(x => new
             {
                 x.Game,
-                SpanDays = (x.LastDay! - x.FirstDay!).Days + 1
+                SpanDays = (x.LastDay! - x.FirstDay!).Value.Days + 1
             })
             .ToList();
 
@@ -127,62 +108,11 @@ public class PSNAnalyticsService
 
         result.UniqueGamesPlayed = uniqueGames.Count;
 
-        var mostPlayedGamesCount = uniqueGames.Count switch
-        {
-            < 15 => 1,
-            < 25 => 3,
-            < 50 => 5,
-            _ => 10
-        };
+        result.MostPlayedGames = CalculateMostPlayedGames(uniqueGames);
 
-        result.MostPlayedGames =
-        [
-            .. uniqueGames
-                .Where(g => g.PlayerGame.PlayHours.HasValue)
-                .Select(g => new MostPlayedGame
-                {
-                    Game = g,
-                    PercentageOfTotalPlaytime = totalHoursPlayed > 0
-                        ? g.PlayerGame.PlayHours!.Value / totalHoursPlayed * 100
-                        : 0
-                })
-                .OrderByDescending(g => g.Game.PlayerGame.PlayHours)
-                .Take(mostPlayedGamesCount)
-        ];
+        result.LongestRunningGames = CalculateLongestRunningGames(uniqueGames);
 
-        var longestGamesCount = uniqueGames.Count switch
-        {
-            < 15 => 1,
-            < 25 => 3,
-            < 100 => 5,
-            _ => 10
-        };
-
-        result.LongestRunningGames = [.. uniqueGames
-            .Where(x => x.PlayerGame.LastPlayed.HasValue && x.PlayerGame.FirstPlayed.HasValue)
-            .OrderByDescending(x => x.PlayerGame.LastPlayed - x.PlayerGame.FirstPlayed)
-            .Take(longestGamesCount)
-        ];
-
-        result.SingleDayGames = [.. games
-            .Where(g =>
-                g.PlayerGame.FirstPlayed != null &&
-                g.PlayerGame.LastPlayed != null &&
-                g.PlayerGame.LastPlayed - g.PlayerGame.FirstPlayed <= TimeSpan.FromHours(24) &&
-                g.PlayerGame.PlayHours.HasValue &&
-                (
-                    g.PlayerGame.PlayHours.Value >= minimumHoursPlayedForAbandoned ||
-                    (g.PlayerGame.PlayHours.Value >= 1.0 &&
-                    g.PlayerGame.TrophyData.Any(t => t.Progress >= maximumTrophyProgressForAbandoned))
-                )
-            )
-            .OrderByDescending(g =>
-                g.PlayerGame.TrophyData.Count != 0
-                    ? g.PlayerGame.TrophyData.Max(t => t.Progress)
-                    : 0
-            )
-            .ThenByDescending(g => g.PlayerGame.PlayHours ?? 0)
-            .Take(SingleDayGamesCount)];
+        result.SingleDayGames = CalculateSingleDayGames(games);
 
         var droughts = CalculateNewGameDroughts(games);
 
@@ -198,36 +128,9 @@ public class PSNAnalyticsService
                 GamesStarted = g.Count()
             })];
 
-        var cutoffDate = DateTime.UtcNow.AddDays(-minimumDaysSincePlayedForAbandoned);
-
         // A game is considered abandoned if it has not been played in the last 60 days, 
         // has at least 3 hours playtime, and has a trophy progress of less than 20%.
-        result.AbandonedGames = [.. games
-            .Where(g =>
-            g.PlayerGame.LastPlayed.HasValue &&
-            g.PlayerGame.LastPlayed.Value < cutoffDate &&
-            g.PlayerGame.PlayHours.HasValue &&
-            g.PlayerGame.PlayHours.Value >= minimumHoursPlayedForAbandoned &&
-            g.PlayerGame.TrophyData != null &&
-            g.PlayerGame.TrophyData.Any(t => t.Progress > 0))
-            .Select(g =>
-            {
-                var trophyProgress = g.PlayerGame.TrophyData
-                    .Where(t => t.Progress > 0)
-                    .Max(t => t.Progress);
-
-                return new AbandonedGame
-                {
-                    Game = g,
-                    DaysSinceLastPlayed =
-                        (DateTime.UtcNow - g.PlayerGame.LastPlayed!.Value).Days,
-                    TrophyProgress = trophyProgress
-                };
-            })
-            .Where(x => x.TrophyProgress < maximumTrophyProgressForAbandoned)
-            .OrderByDescending(x => x.Game.PlayerGame.PlayHours)
-            .Take(AbandonedGamesCount)
-            .ToList()];
+        result.AbandonedGames = CalculateAbandonedGames(games);
 
         result.PS3GamesPlayed = games.Count(
             g => string.Equals(
@@ -284,7 +187,7 @@ public class PSNAnalyticsService
             MedianHoursPerGame = CalculateMedian(gamesWithPlaytime.Select(g => g.PlayerGame.PlayHours!.Value)),
             AverageSessionsPerGame = CalculateAverage(gamesWithPlaytime.Select(g => (double)g.PlayerGame.PlayCount!.Value)),
             MedianSessionsPerGame = CalculateMedian(gamesWithPlaytime.Select(g => (double)g.PlayerGame.PlayCount!.Value)),
-            AverageSessionLength = hoursPlayed / totalSessionsPlayed
+            AverageSessionLength = totalSessionsPlayed > 0 ? hoursPlayed / totalSessionsPlayed : 0
         };
 
         if (gamesWithDates.Count > 0)
@@ -296,7 +199,80 @@ public class PSNAnalyticsService
         return result;
     }
 
-    private static List<Drought> CalculateNewGameDroughts(IEnumerable<EnrichedPlayerGame> games)
+    public static List<MostPlayedGame> CalculateMostPlayedGames(List<EnrichedPlayerGame> games)
+    {
+        var gamesWithPlaytime = games
+            .Where(g => g.PlayerGame.PlayHours.HasValue && g.PlayerGame.PlayCount.HasValue)
+            .ToList();
+
+        var mostPlayedGamesCount = gamesWithPlaytime.Count switch
+        {
+            < 5 => 1,
+            < 10 => 2,
+            < 15 => 3,
+            < 20 => 4,
+            < 25 => 5,
+            _ => 10
+        };
+
+        var totalHoursPlayed = gamesWithPlaytime.Sum(g => g.PlayerGame.PlayHours!.Value);
+
+        return [.. gamesWithPlaytime
+            .Where(g => g.PlayerGame.PlayHours.HasValue)
+            .Select(g => new MostPlayedGame
+            {
+                Game = g,
+                PercentageOfTotalPlaytime = totalHoursPlayed > 0
+                    ? g.PlayerGame.PlayHours!.Value / totalHoursPlayed * 100
+                    : 0
+            })
+            .OrderByDescending(g => g.Game.PlayerGame.PlayHours)
+            .Take(mostPlayedGamesCount)
+        ];
+    }
+
+    public static List<EnrichedPlayerGame> CalculateLongestRunningGames(List<EnrichedPlayerGame> games)
+    {
+        var uniqueGames = EnrichedGameHelper.MergeByConceptId(games);
+
+        var longestGamesCount = uniqueGames.Count switch
+        {
+            < 15 => 1,
+            < 25 => 3,
+            < 100 => 5,
+            _ => 10
+        };
+
+        return [.. uniqueGames
+            .Where(x => x.PlayerGame.LastPlayed.HasValue && x.PlayerGame.FirstPlayed.HasValue)
+            .OrderByDescending(x => x.PlayerGame.LastPlayed - x.PlayerGame.FirstPlayed)
+            .Take(longestGamesCount)
+        ];
+    }
+
+    public static List<EnrichedPlayerGame> CalculateSingleDayGames(List<EnrichedPlayerGame> games)
+    {
+        return [.. games
+            .Where(g =>
+                g.PlayerGame.FirstPlayed != null &&
+                g.PlayerGame.LastPlayed != null &&
+                g.PlayerGame.LastPlayed - g.PlayerGame.FirstPlayed <= TimeSpan.FromHours(24) &&
+                g.PlayerGame.PlayHours.HasValue &&
+                (
+                    g.PlayerGame.PlayHours.Value > minimumHoursPlayedForAbandoned ||
+                    (g.PlayerGame.PlayHours.Value >= 1.0 &&
+                    g.PlayerGame.TrophyData.Any(t => t.Progress > maximumTrophyProgressForAbandoned))
+                )
+            )
+            .OrderByDescending(g =>
+                g.PlayerGame.TrophyData.Count != 0
+                    ? g.PlayerGame.TrophyData.Max(t => t.Progress)
+                    : 0
+            )
+            .ThenByDescending(g => g.PlayerGame.PlayHours ?? 0)];
+    }
+
+    public static List<Drought> CalculateNewGameDroughts(IEnumerable<EnrichedPlayerGame> games)
     {
         var orderedGames = games
             .Where(g =>
@@ -333,7 +309,7 @@ public class PSNAnalyticsService
         return droughts;
     }
 
-    public TrophyAnalytics CalculateTrophyAnalytics(IEnumerable<EnrichedPlayerGame> games)
+    public static TrophyAnalytics CalculateTrophyAnalytics(IEnumerable<EnrichedPlayerGame> games)
     {
         var trophyGames = games
             .SelectMany(g => g.PlayerGame.TrophyData.Select(t => new TrophyGame
@@ -426,13 +402,53 @@ public class PSNAnalyticsService
         };
     }
 
-    private static double CalculateAverage(IEnumerable<double> values)
+    public static List<AbandonedGame> CalculateAbandonedGames(List<EnrichedPlayerGame> games)
+    {
+        var cutoffDate = DateTime.UtcNow.AddDays(-minimumDaysSincePlayedForAbandoned);
+
+        var abandoned = games
+            .Where(g =>
+            g.PlayerGame.LastPlayed.HasValue &&
+            g.PlayerGame.LastPlayed.Value < cutoffDate &&
+            g.PlayerGame.PlayHours.HasValue &&
+            g.PlayerGame.PlayHours.Value >= minimumHoursPlayedForAbandoned &&
+            g.PlayerGame.TrophyData is { Count: > 0 } &&
+            g.PlayerGame.TrophyData.Any(t => t.Progress > 0))
+            .Select(g =>
+            {
+                var trophyProgress = g.PlayerGame.TrophyData
+                    .Where(t => t.Progress > 0)
+                    .Max(t => t.Progress);
+
+                return new AbandonedGame
+                {
+                    Game = g,
+                    DaysSinceLastPlayed =
+                        (DateTime.UtcNow - g.PlayerGame.LastPlayed!.Value).Days,
+                    TrophyProgress = trophyProgress
+                };
+            })
+            .Where(x => x.TrophyProgress < maximumTrophyProgressForAbandoned)
+            .OrderByDescending(x => x.Game.PlayerGame.PlayHours)
+            .ToList();
+
+        var abandonedGamesCount = abandoned.Count switch
+        {
+            < 5 => abandoned.Count,
+            < 10 => 5,
+            _ => 10
+        };
+
+        return [.. abandoned.Take(abandonedGamesCount)];
+    }
+    
+    public static double CalculateAverage(IEnumerable<double> values)
     {
         var array = values.ToArray();
         return array.Length == 0 ? 0 : array.Average();
     }
 
-    private static double CalculateMedian(IEnumerable<double> values)
+    public static double CalculateMedian(IEnumerable<double> values)
     {
         var array = values
             .OrderBy(x => x)
@@ -473,12 +489,5 @@ public class PSNAnalyticsService
         }
 
         return dates.Count > 0 ? dates.Max() : null;
-    }
-
-    private sealed class GameActivityPeriod
-    {
-        public required EnrichedPlayerGame Game { get; set; }
-        public required DateTime FirstDay { get; set; }
-        public required DateTime LastDay { get; set; }
     }
 }

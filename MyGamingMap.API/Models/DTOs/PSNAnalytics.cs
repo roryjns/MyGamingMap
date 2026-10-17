@@ -43,6 +43,15 @@ public class ActivityAnalytics
     public PlatformPlaytime PS5 { get; set; } = new();
 }
 
+public class Drought
+{
+    public int DurationDays { get; set; }
+    public DateTime StartDate { get; set; }
+    public DateTime EndDate { get; set; }
+    public EnrichedPlayerGame? LastGameBefore { get; set; }
+    public EnrichedPlayerGame? FirstGameAfter { get; set; }
+}
+
 public class AbandonedGame
 {
     public EnrichedPlayerGame Game { get; set; } = null!;

@@ -1,10 +1,6 @@
 import { Text, Box, Heading } from "@chakra-ui/react"
 
-type NetworkProps = {
-
-}
-
-export function Network({ }: NetworkProps) {
+export function Network() {
     return (
         <Box>
             <Box mb="12" textAlign="center">

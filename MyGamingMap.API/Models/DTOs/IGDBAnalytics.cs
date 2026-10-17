@@ -1,9 +1,10 @@
 namespace MyGamingMap.API.Models.DTOs;
 
-public class IGDB_Analytics
+public class IGDBAnalytics
 {
     public Summary Summary { get; set; } = new();
-    public TasteProfile TasteProfile { get; set; } = new();
+    public List<string> UnexploredGenres { get; set; } = [];
+    public List<string> UnexploredThemes { get; set; } = [];
     public List<FranchiseAnalytic> FranchiseAnalytics { get; set; } = [];
     public List<GameEngineAnalytic> GameEngineAnalytics { get; set; } = [];
     public List<GameModeAnalytic> GameModeAnalytics { get; set; } = [];
@@ -12,8 +13,8 @@ public class IGDB_Analytics
     public List<CompanyAnalytic> DeveloperAnalytics { get; set; } = [];
     public List<CompanyAnalytic> PublisherAnalytics { get; set; } = [];
     public AgeRatingAnalytics? AgeRatingAnalytics { get; set; } = new();
-    public ReviewRatingAnalytics ReviewRatingAnalytics { get; set; } = new();
     public ReleaseDateAnalytics ReleaseDateAnalytics { get; set; } = new();
+    public ReviewRatingAnalytics ReviewRatingAnalytics { get; set; } = new();
 }
 
 public class CategoryAnalytic
@@ -42,8 +43,6 @@ public class CategoryAnalytic
     public double Breadth { get; set; }
     public double Investment { get; set; }
     public double CategoryRelevance { get; set; }
-
-    public List<EnrichedPlayerGame> Games { get; set; } = [];
 }
 
 public class FranchiseAnalytic : CategoryAnalytic
@@ -93,19 +92,6 @@ public class AgeRatingAnalytic : CategoryAnalytic
     public List<GamesStartedByYear> GamesStartedPerYear { get; set; } = [];
 }
 
-public class ReviewRatingAnalytics
-{
-    public double AverageReviewRating { get; set; }
-    public string AverageReviewTier { get; set; } = "F";
-    public List<ReviewRatingTier> RatingTiers { get; set; } = [];
-    public List<EnrichedPlayerGame> HighestRatedGames { get; set; } = [];
-    public List<EnrichedPlayerGame> LowestRatedGames { get; set; } = [];
-    public List<EnrichedPlayerGame> HighRatingLowPlaytime { get; set; } = [];
-    public List<EnrichedPlayerGame> LowRatingHighPlaytime { get; set; } = [];
-}
-
-public class ReviewRatingTier : CategoryAnalytic { }
-
 public class ReleaseDateAnalytics
 {
     public double GamingAge { get; set; }
@@ -120,6 +106,27 @@ public class ReleaseDateAnalytics
 public class ReleaseYearAnalytic : CategoryAnalytic
 {
     public List<GamesStartedByYear> GamesStartedPerYear { get; set; } = [];
+}
+
+public class ReviewRatingAnalytics
+{
+    public TierList? TierList { get; set; }
+    public List<EnrichedPlayerGame> HighestRatedGames { get; set; } = [];
+    public List<EnrichedPlayerGame> LowestRatedGames { get; set; } = [];
+    public List<EnrichedPlayerGame> HighRatingLowPlaytime { get; set; } = [];
+    public List<EnrichedPlayerGame> LowRatingHighPlaytime { get; set; } = [];
+}
+
+public class TierList
+{
+    public double AverageReviewRating { get; set; }
+    public string AverageReviewTier { get; set; } = "F";
+    public List<ReviewRatingTier> RatingTiers { get; set; } = [];
+}
+
+public class ReviewRatingTier : CategoryAnalytic
+{
+    public List<EnrichedPlayerGame> Games { get; set; } = [];
 }
 
 public class ReleaseGapGame
@@ -137,17 +144,6 @@ public class Summary
     public int ThemeCount { get; set; }
     public int DeveloperCount { get; set; }
     public int PublisherCount { get; set; }
-}
-
-public class TasteProfile
-{
-    public TasteProfileCategory Genres { get; set; } = new();
-    public TasteProfileCategory Themes { get; set; } = new();
-    public TasteProfileCategory GameModes { get; set; } = new(); // Play style e.g. mostly singleplayer but dabbles in multiplayer
-    public TasteProfileCategory ESRBRating { get; set; } = new();
-    public TasteProfileCategory PEGIRating { get; set; } = new();
-    public List<string> UnexploredGenres { get; set; } = [];
-    public List<string> UnexploredThemes { get; set; } = [];
 }
 
 public class TasteProfileCategory

@@ -50,9 +50,18 @@ export default function Results({ analytics, isSearching, searchError, activeTab
                     </Flex>
                 }
             >
-                {activeTab === "map" && <Map />}
+                {activeTab === "map" && (
+                    <Map
+                    
+                    />
+                )}
 
-                {activeTab === "network" && <Network />}
+                {activeTab === "network" && (
+                    <Network
+                        
+                    />
+                )}
+                    
 
                 {activeTab === "overview" && (
                     <Overview
