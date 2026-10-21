@@ -2,7 +2,7 @@ namespace MyGamingMap.API.Services.EraComponents.Rules;
 
 using MyGamingMap.API.Models.DTOs;
 
-public sealed class ThemeShareRule : ChartRule
+public sealed class TopThemesRule : ChartRule
 {
     protected override string EntityKey => "themes";
 

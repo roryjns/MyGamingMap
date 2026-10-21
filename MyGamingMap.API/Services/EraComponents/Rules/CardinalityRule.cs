@@ -131,4 +131,13 @@ public abstract class CardinalityRule<T> : IEraComponentRule
             $"{GetType().Name} [{era.Start:yyyy-MM} – {era.End:yyyy-MM}]: " +
             $"count={count} -> {decision}");
     }
+
+    public double Strength(EraAnalytics era)
+    {
+        var all = Entities(era);
+        if (all.Count < 2) return 0;
+
+        var (hours, games) = Scores(all);
+        return Math.Max(hours, games);
+    }
 }

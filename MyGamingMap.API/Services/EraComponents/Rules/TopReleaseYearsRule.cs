@@ -9,6 +9,13 @@ public sealed class TopReleaseYearsRule : IEraComponentRule
 
     public string DataSource => "bar:release-years";
 
+    public double Strength(EraAnalytics era)
+    {
+        var ordered = BuildOrdered(era);
+        var nonZero = ordered.Where(o => o.Value > 0).ToList();
+        return IEraComponentRule.ScoreMetric(nonZero, o => o.Value);
+    }
+
     public bool IsEligible(EraAnalytics era)
     {
         var ordered = BuildOrdered(era);

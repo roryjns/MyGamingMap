@@ -95,4 +95,14 @@ public sealed class TopGamesRule : IEraComponentRule
             Entries = entries,
         };
     }
+
+    // Many games evenly spread = low strength, one dominant game = high strength
+    public double Strength(EraAnalytics era)
+    {
+        var games = era.MostPlayedGames;
+        if (games.Count < 2) return 0;
+
+        var baseScore = IEraComponentRule.ScoreMetric(games, g => g.Game.PlayerGame.PlayHours ?? 0);
+        return Math.Min(baseScore + 0.2, 1.0);   // top games is usually worth showing -> higher priority
+    }
 }

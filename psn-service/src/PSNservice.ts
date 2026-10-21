@@ -403,7 +403,7 @@ async function mergePlayAndTrophyData(accessToken: string, accountId: string, pl
   );
 
   console.error(
-    `Filtered irrelevant data: ${lowPlaytimeRemoved} play data only removed (<=1 hour), ${lowProgressRemoved} trophy data only removed (<=5% progress)`
+    `Filtered irrelevant data: ${lowPlaytimeRemoved} play data only (<=1 hour), ${lowProgressRemoved} trophy data only (<=5% progress)`
   );
 
   const gamesBeforeMerge = mergedGames.length;

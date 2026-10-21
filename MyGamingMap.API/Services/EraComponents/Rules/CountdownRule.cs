@@ -17,6 +17,7 @@ public abstract class CountdownRule : IEraComponentRule
     // DataSource no longer depends on a per-instance Metric — the
     // generic base picks the metric dynamically per era.
     public string DataSource => $"countdown:{EntityKey}";
+    public abstract double Strength(EraAnalytics era);
 
     public abstract bool IsEligible(EraAnalytics era);
     public abstract EraComponent Build(EraAnalytics era);
@@ -123,5 +124,13 @@ public abstract class CountdownRule<T> : CountdownRule
         Console.WriteLine(
             $"{GetType().Name} [{era.Start:yyyy-MM} – {era.End:yyyy-MM}]: " +
             $"hours={h}, gamesPlayed={g} -> {decision}");
+    }
+
+    public override double Strength(EraAnalytics era)
+    {
+        var all = Entities(era);
+        if (all.Count < 2) return 0;
+        var (hours, games) = Scores(all);
+        return Math.Max(hours, games);
     }
 }

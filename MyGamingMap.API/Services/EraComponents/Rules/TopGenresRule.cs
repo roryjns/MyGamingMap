@@ -2,7 +2,7 @@ namespace MyGamingMap.API.Services.EraComponents.Rules;
 
 using MyGamingMap.API.Models.DTOs;
 
-public sealed class GenreShareRule : ChartRule
+public sealed class TopGenresRule : ChartRule
 {
     protected override string EntityKey => "genres";
 

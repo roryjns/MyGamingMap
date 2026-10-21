@@ -683,7 +683,7 @@ public static class MapService
             ea.IGDBAnalytics.AgeRatingAnalytics = IGDBAnalyticsService.CalculateAgeRatingAnalytics(gamesStartedInEra);
             ea.IGDBAnalytics.ReleaseDateAnalytics = IGDBAnalyticsService.CalculateReleaseDateAnalytics(gamesStartedInEra);
             ea.IGDBAnalytics.ReviewRatingAnalytics = IGDBAnalyticsService.CalculateReviewRatingAnalytics(gamesStartedInEra, maxGamesPerTier: 10);
-            
+
             // Last game before era (by LastPlayed).
             var lastGameBefore = enrichedGames
                 .Where(g =>
@@ -712,7 +712,7 @@ public static class MapService
                 .Where(d => d.StartDate >= era.Start && d.StartDate < era.End)
                 .OrderByDescending(d => d.DurationDays)
                 .FirstOrDefault();
-                
+
             if (newGameDrought is not null)
                 ea.NewGameDroughts = newGameDrought;
 
@@ -748,7 +748,6 @@ public static class MapService
 
             var path = Path.Combine(Directory.GetCurrentDirectory(), "eraAnalytics.json");
             File.WriteAllText(path, json);
-            Console.WriteLine($"Wrote era analytics: {path}");
         }
         catch (Exception ex)
         {
@@ -760,15 +759,30 @@ public static class MapService
 
     private static Map PopulateMap(Map map, List<EraAnalytics> eraAnalytics)
     {
-        for (int i = 0; i < map.Eras.Count; i++)
-        {
-            // Determine UI components for the era
-            map.Eras[i].Components = EraComponentSelector.Select(eraAnalytics[i]);
-            Console.WriteLine("");
+    var pairs = map.Eras
+        .Zip(eraAnalytics, (era, analytics) => (era, analytics))
+        .ToList();
 
-            // Annotate each era using a mini LLM with guard rails
-        }
+    var selected = EraComponentSelector.SelectDiverse(pairs);
 
+    // If the diversity pass returned nothing, fall back to per-era selection
+    // so the map isn't empty. Better to overfill than to render nothing.
+    if (selected.Count == 0)
+    {
+        Console.WriteLine("[PopulateMap] WARN: SelectDiverse returned 0, falling back");
+        foreach (var era in map.Eras)
+            era.Components = [];
+        for (var i = 0; i < pairs.Count; i++)
+            pairs[i].era.Components = EraComponentSelector.Select(pairs[i].analytics);
         return map;
+    }
+
+    foreach (var era in map.Eras)
+        era.Components = [];
+    foreach (var (era, component) in selected)
+        era.Components.Add(component);
+
+    // Annotate each era using a mini LLM with guard rails
+    return map;
     }
 }

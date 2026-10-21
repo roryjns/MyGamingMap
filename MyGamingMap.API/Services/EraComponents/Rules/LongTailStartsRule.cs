@@ -8,6 +8,9 @@ public sealed class LongTailStartsRule : IEraComponentRule
 
     private const int MaxEntries = 4;
 
+    public double Strength(EraAnalytics era) =>
+    IEraComponentRule.CountStrength(era.LongTailStarts.Count, MaxEntries);
+
     public bool IsEligible(EraAnalytics era)
     {
         var count = era.LongTailStarts.Count;

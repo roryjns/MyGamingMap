@@ -1,14 +1,13 @@
-using IGDB.Models;
 using MyGamingMap.API.Models.DTOs;
 
 namespace MyGamingMap.API.Services;
 
 public static class PSNAnalyticsService
 {
-    private const int NewGameDroughtThresholdDays = 90;
-    private const int minimumDaysSincePlayedForAbandoned = 60;
-    private const double minimumHoursPlayedForAbandoned = 3;
-    private const int maximumTrophyProgressForAbandoned = 20;
+    internal const int NewGameDroughtThresholdDays = 90;
+    internal const int MinimumDaysSincePlayedForAbandoned = 60;
+    internal const double MinimumHoursPlayedForAbandoned = 3;
+    internal const int MaximumTrophyProgressForAbandoned = 20;
 
     public static PSNAnalytics CalculatePSNAnalytics(List<EnrichedPlayerGame> games)
     {
@@ -259,9 +258,9 @@ public static class PSNAnalyticsService
                 g.PlayerGame.LastPlayed - g.PlayerGame.FirstPlayed <= TimeSpan.FromHours(24) &&
                 g.PlayerGame.PlayHours.HasValue &&
                 (
-                    g.PlayerGame.PlayHours.Value > minimumHoursPlayedForAbandoned ||
+                    g.PlayerGame.PlayHours.Value > MinimumHoursPlayedForAbandoned ||
                     (g.PlayerGame.PlayHours.Value >= 1.0 &&
-                    g.PlayerGame.TrophyData.Any(t => t.Progress > maximumTrophyProgressForAbandoned))
+                    g.PlayerGame.TrophyData.Any(t => t.Progress >= MaximumTrophyProgressForAbandoned))
                 )
             )
             .OrderByDescending(g =>
@@ -404,14 +403,14 @@ public static class PSNAnalyticsService
 
     public static List<AbandonedGame> CalculateAbandonedGames(List<EnrichedPlayerGame> games)
     {
-        var cutoffDate = DateTime.UtcNow.AddDays(-minimumDaysSincePlayedForAbandoned);
+        var cutoffDate = DateTime.UtcNow.AddDays(-MinimumDaysSincePlayedForAbandoned);
 
         var abandoned = games
             .Where(g =>
             g.PlayerGame.LastPlayed.HasValue &&
             g.PlayerGame.LastPlayed.Value < cutoffDate &&
             g.PlayerGame.PlayHours.HasValue &&
-            g.PlayerGame.PlayHours.Value >= minimumHoursPlayedForAbandoned &&
+            g.PlayerGame.PlayHours.Value >= MinimumHoursPlayedForAbandoned &&
             g.PlayerGame.TrophyData is { Count: > 0 } &&
             g.PlayerGame.TrophyData.Any(t => t.Progress > 0))
             .Select(g =>
@@ -428,7 +427,7 @@ public static class PSNAnalyticsService
                     TrophyProgress = trophyProgress
                 };
             })
-            .Where(x => x.TrophyProgress < maximumTrophyProgressForAbandoned)
+            .Where(x => x.TrophyProgress < MaximumTrophyProgressForAbandoned)
             .OrderByDescending(x => x.Game.PlayerGame.PlayHours)
             .ToList();
 
@@ -441,7 +440,7 @@ public static class PSNAnalyticsService
 
         return [.. abandoned.Take(abandonedGamesCount)];
     }
-    
+
     public static double CalculateAverage(IEnumerable<double> values)
     {
         var array = values.ToArray();

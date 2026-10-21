@@ -7,6 +7,9 @@ public sealed class LongTailEndsRule : IEraComponentRule
     public string DataSource => "long-tail-ends";
 
     private const int MaxEntries = 4;
+    
+    public double Strength(EraAnalytics era) =>
+        IEraComponentRule.CountStrength(era.LongTailStarts.Count, MaxEntries);
 
     public bool IsEligible(EraAnalytics era)
     {

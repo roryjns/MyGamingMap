@@ -2,11 +2,14 @@ namespace MyGamingMap.API.Services.EraComponents.Rules;
 
 using MyGamingMap.API.Models.DTOs;
 
-public sealed class GameModeShareRule : IEraComponentRule
+public sealed class TopGameModesRule : IEraComponentRule
 {
     private const double MinScore = 0.2;
 
     public string DataSource => "donut:game-mode-share";
+
+    public double Strength(EraAnalytics era) =>
+        IEraComponentRule.ScoreMetric(Shares(era), s => s.Value);
 
     public bool IsEligible(EraAnalytics era)
     {

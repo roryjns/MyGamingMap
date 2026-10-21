@@ -6,6 +6,9 @@ public sealed class TopAbandonedGamesRule : IEraComponentRule
 {
     public string DataSource => "abandoned-games";
 
+    public double Strength(EraAnalytics era) =>
+        Math.Min(era.NewGameDroughts.DurationDays / 365.0, 1);
+
     private const int CalloutMax = 4;
     private const int CountdownMax = 10;
 
@@ -86,5 +89,33 @@ public sealed class TopAbandonedGamesRule : IEraComponentRule
         Console.WriteLine(
             $"{GetType().Name} [{era.Start:yyyy-MM} – {era.End:yyyy-MM}]: " +
             $"count={count} -> {decision}");
+    }
+}
+
+public sealed class AbandonedQuizRule : SpotTheOneQuizRule
+{
+    protected override string EntityKey => "abandoned-games";
+    protected override string Question => "Which game did you abandon?";
+
+    protected override IReadOnlyList<EnrichedPlayerGame> Accepted(EraAnalytics era) =>
+        [.. era.AbandonedGames.Select(a => a.Game)];
+
+    protected override bool NearMiss(EraAnalytics era, EnrichedPlayerGame g)
+    {
+        var pg = g.PlayerGame;
+        if (pg.LastPlayed is null) return false;
+
+        var daysSince = (DateTime.Now - pg.LastPlayed.Value).TotalDays;
+        if (daysSince < PSNAnalyticsService.MinimumDaysSincePlayedForAbandoned) return false;
+        if (!pg.PlayHours.HasValue) return false;
+        if (pg.PlayHours.Value < PSNAnalyticsService.MinimumHoursPlayedForAbandoned) return false;
+        return pg.TrophyData.All(t =>
+            t.Progress < PSNAnalyticsService.MaximumTrophyProgressForAbandoned);
+    }
+
+    protected override double Proximity(EnrichedPlayerGame g)
+    {
+        var days = (DateTime.Now - g.PlayerGame.LastPlayed!.Value).TotalDays;
+        return days;
     }
 }

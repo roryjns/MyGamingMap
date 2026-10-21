@@ -15,16 +15,17 @@ public abstract class ChartRule : IEraComponentRule
 
     public string DataSource => $"chart:{EntityKey}";
 
+    public double Strength(EraAnalytics era) =>
+        IEraComponentRule.MergedChartStrength(Slices(era), s => s);
+
     public bool IsEligible(EraAnalytics era)
     {
         var slices = ChartMerge.Merge(Slices(era));
-
         if (slices.Count < MinEntries)
         {
             Log(era, slices.Count, $"ineligible (< {MinEntries})");
             return false;
         }
-
         Log(era, slices.Count, slices.Count <= DonutMaxSlices ? "donut" : "bar");
         return true;
     }
@@ -32,10 +33,7 @@ public abstract class ChartRule : IEraComponentRule
     public EraComponent Build(EraAnalytics era)
     {
         var slices = ChartMerge.Merge(Slices(era));
-
-        return slices.Count <= DonutMaxSlices
-            ? BuildDonut(slices)
-            : BuildBar(slices);
+        return slices.Count <= DonutMaxSlices ? BuildDonut(slices) : BuildBar(slices);
     }
 
     private DonutChartComponent BuildDonut(IReadOnlyList<(string Label, int Value)> slices) =>
@@ -43,13 +41,10 @@ public abstract class ChartRule : IEraComponentRule
         {
             Basis = Basis,
             Description = DescriptionFor(slices),
-            Entries = [.. slices
-                .Select(s => new DonutChartEntry
-                {
-                    Label = s.Label,
-                    Value = s.Value,
-                    Unit = Unit,
-                })],
+            Entries = [.. slices.Select(s => new DonutChartEntry
+            {
+                Label = s.Label, Value = s.Value, Unit = Unit,
+            })],
         };
 
     private BarChartComponent BuildBar(IReadOnlyList<(string Label, int Value)> slices) =>
@@ -57,13 +52,10 @@ public abstract class ChartRule : IEraComponentRule
         {
             Basis = Basis,
             Description = DescriptionFor(slices),
-            Entries = [.. slices
-                .Select(s => new BarChartEntry
-                {
-                    Label = s.Label,
-                    Value = s.Value,
-                    Unit = Unit,
-                })],
+            Entries = [.. slices.Select(s => new BarChartEntry
+            {
+                Label = s.Label, Value = s.Value, Unit = Unit,
+            })],
         };
 
     private void Log(EraAnalytics era, int count, string decision) =>
@@ -76,7 +68,7 @@ internal static class ChartMerge
 {
     public static IReadOnlyList<(string Label, int Value)> Merge(
         IReadOnlyList<(string Label, int Value)> entries,
-        double otherThreshold = 0.05,
+        double otherThreshold = 0.03, // Values that make up <= 3% of total get merged
         int maxNamed = 10)
     {
         var total = entries.Sum(e => e.Value);

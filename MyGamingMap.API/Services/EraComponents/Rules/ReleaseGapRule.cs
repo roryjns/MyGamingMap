@@ -14,9 +14,11 @@ public abstract class ReleaseGapRule : IEraComponentRule
 
     private const int CalloutMax = 4;
     private const int CountdownMax = 10;
-    private const double MinScore = 0.1;
 
     public string DataSource => $"countdown:{EntityKey}";
+    
+    public double Strength(EraAnalytics era) =>
+        IEraComponentRule.CountStrength(Entities(era).Count, CountdownMax);
 
     public bool IsEligible(EraAnalytics era)
     {

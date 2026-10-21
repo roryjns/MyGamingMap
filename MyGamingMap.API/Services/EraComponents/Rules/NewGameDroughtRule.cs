@@ -6,6 +6,13 @@ public sealed class NewGameDroughtRule : IEraComponentRule
 {
     public string DataSource => "callout:new-game-drought";
 
+    public double Strength(EraAnalytics era)
+    {
+        var days = era.NewGameDroughts.DurationDays;
+        if (days <= 0) return 0;
+        return 1.0 - Math.Exp(-days / 180.0);
+    }
+
     public bool IsEligible(EraAnalytics era)
     {
         var drought = era.NewGameDroughts;

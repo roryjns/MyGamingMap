@@ -14,8 +14,12 @@ public abstract class GameListRule : IEraComponentRule
 
     private const int CalloutMax = 4;
     private const int GridMax = 30;
+    protected virtual int GridStrengthMax => GridMax;
 
     public string DataSource => $"gamelist:{EntityKey}";
+    
+    public double Strength(EraAnalytics era) =>
+        IEraComponentRule.CountStrength(Games(era).Count, GridStrengthMax);
 
     public bool IsEligible(EraAnalytics era)
     {

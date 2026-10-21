@@ -1,4 +1,6 @@
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
+using MyGamingMap.API.Services.EraComponents.Rules;
 
 namespace MyGamingMap.API.Models.DTOs;
 
@@ -38,6 +40,8 @@ public class Overview
 [JsonDerivedType(typeof(GridComponent), "grid")]
 [JsonDerivedType(typeof(DonutChartComponent), "donut")]
 [JsonDerivedType(typeof(BarChartComponent), "bar")]
+[JsonDerivedType(typeof(TimelineComponent), "timeline")]
+[JsonDerivedType(typeof(QuizComponent), "quiz")]
 public abstract class EraComponent
 {
     public string? Description { get; init; }
@@ -76,6 +80,9 @@ public enum ComponentBasis
     // Bar chart
     AgeRatingsByGamesPlayed,
     ReleaseYearsByGamesPlayed,
+
+    // Timeline
+    GamesStarted,
 }
 
 public sealed class CountdownComponent : EraComponent
@@ -88,7 +95,7 @@ public sealed class CountdownEntry
 {
     public required int Rank { get; init; }
     public required string Label { get; init; }
-    public EnrichedPlayerGame? Game { get; init; }
+    [JsonIgnore] public EnrichedPlayerGame? Game { get; init; }
     public string? CompanyImageUrl { get; init; }
     public double? Value { get; init; }
     public string? Unit { get; init; }
@@ -104,7 +111,7 @@ public sealed class CalloutComponent : EraComponent
 public sealed class CalloutEntry
 {
     public required string Label { get; init; }
-    public EnrichedPlayerGame? Game { get; init; }
+    [JsonIgnore] public EnrichedPlayerGame? Game { get; init; }
     public string? CompanyImageUrl { get; init; }
     public double? Value { get; init; }
     public string? Unit { get; init; }
@@ -150,9 +157,21 @@ public sealed class BarChartEntry
     public string? Unit { get; init; }
 }
 
+public sealed class TimelineComponent : EraComponent
+{
+    [JsonIgnore] public ComponentBasis Basis { get; init; }
+    public required List<TimelineEntry> Entries { get; init; }
+}
+
+public sealed class TimelineEntry
+{
+    public required string Month { get; init; }
+    [JsonIgnore] public List<EnrichedPlayerGame> GamesStarted { get; init; } = [];
+}
+
 public sealed class QuizComponent : EraComponent
 {
-    public required string Prompt { get; init; }
+    public required string Question { get; init; }
     public required List<QuizOption> Options { get; init; }
     public required int CorrectIndex { get; init; }
 }
@@ -160,7 +179,7 @@ public sealed class QuizComponent : EraComponent
 public sealed class QuizOption
 {
     public required string Label { get; init; }
-    public EnrichedPlayerGame? Game { get; init; }
+    [JsonIgnore] public EnrichedPlayerGame? Game { get; init; }
 }
 
 public class EraAnalytics

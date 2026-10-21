@@ -2,11 +2,14 @@ namespace MyGamingMap.API.Services.EraComponents.Rules;
 
 using MyGamingMap.API.Models.DTOs;
 
-public sealed class PlatformShareRule : IEraComponentRule
+public sealed class TopPlatformsRule : IEraComponentRule
 {
     private const double MinScore = 0.15;
 
     public string DataSource => "donut:platform-share";
+
+    public double Strength(EraAnalytics era) =>
+        IEraComponentRule.ScoreMetric(Shares(era), s => s.Value);
 
     public bool IsEligible(EraAnalytics era)
     {

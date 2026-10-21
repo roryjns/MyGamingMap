@@ -15,16 +15,17 @@ public abstract class BarChartRule : IEraComponentRule
 
     public string DataSource => $"bar:{EntityKey}";
 
+    public double Strength(EraAnalytics era) =>
+        IEraComponentRule.MergedChartStrength(Bars(era), b => b);
+
     public bool IsEligible(EraAnalytics era)
     {
         var bars = Merge(Bars(era));
-
         if (bars.Count < MinEntries)
         {
             Log(era, bars.Count, $"ineligible (< {MinEntries} bars)");
             return false;
         }
-
         Log(era, bars.Count, "bar");
         return true;
     }
@@ -32,7 +33,6 @@ public abstract class BarChartRule : IEraComponentRule
     public EraComponent Build(EraAnalytics era)
     {
         var bars = Merge(Bars(era));
-
         return new BarChartComponent
         {
             Basis = Basis,
@@ -42,40 +42,16 @@ public abstract class BarChartRule : IEraComponentRule
                 .Take(MaxEntries)
                 .Select(b => new BarChartEntry
                 {
-                    Label = b.Label,
-                    Value = b.Value,
-                    Unit = "games",
+                    Label = b.Label, Value = b.Value, Unit = "games",
                 })],
         };
     }
 
-    private static IReadOnlyList<(string Label, int Value)> Merge(IReadOnlyList<(string Label, int Value)> bars)
-    {
-        var total = bars.Sum(b => b.Value);
-        if (total <= 0) return bars;
-
-        var ordered = bars.OrderByDescending(b => b.Value).ToList();
-
-        var kept = new List<(string Label, int Value)>();
-        var otherTotal = 0;
-        var otherCount = 0;
-
-        foreach (var b in ordered)
-        {
-            if (kept.Count < MaxEntries && b.Value / (double)total >= OtherThreshold)
-                kept.Add(b);
-            else
-            {
-                otherTotal += b.Value;
-                otherCount++;
-            }
-        }
-
-        if (otherCount > 0)
-            kept.Add(("Other", otherTotal));
-
-        return kept;
-    }
+    // Same merge algorithm as ChartMerge but with this rule's thresholds.
+    // Could be replaced by ChartMerge.Merge(Bars(era), OtherThreshold, MaxEntries).
+    private static IReadOnlyList<(string Label, int Value)> Merge(
+        IReadOnlyList<(string Label, int Value)> bars) =>
+        ChartMerge.Merge(bars, OtherThreshold, MaxEntries);
 
     private void Log(EraAnalytics era, int count, string decision) =>
         Console.WriteLine(

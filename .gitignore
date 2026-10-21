@@ -122,22 +122,20 @@ psnAuthCache.json
 
 # Generated PSN data
 output/
-
-# PSN service debug/cache
 psn-service/debug/
 
-# Generated JSON exports
+# Pipeline outputs — regenerated from source data.
+# These contain enriched game lists and era analytics derived
+# from PSN/IGDB, are large, and should not be committed.
+**/enriched_games.json
+**/era_analytics.json
 *.generated.json
-
-# Temporary exports
 *.json.tmp
 *.tmp
 
-# Scraping progress and generated datasets
-# These files contain scraped PlayStation usernames or generated
-# benchmarking data and should not be committed.
+# Scraping progress and generated datasets — contain scraped
+# PlayStation usernames and benchmarking data.
 Scraping/
-
 benchmark_results.jsonl
 benchmark_progress.txt
 
@@ -145,12 +143,9 @@ benchmark_progress.txt
 # Database
 # ==========================================
 
-# Local database files
 *.db
 *.sqlite
 *.sqlite3
-
-# Database backups
 *.dump
 *.backup
 database_backups/

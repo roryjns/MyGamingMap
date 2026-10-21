@@ -8,6 +8,13 @@ public sealed class TopAgeRatingsRule : IEraComponentRule
 
     public string DataSource => "bar:age-ratings";
 
+    public double Strength(EraAnalytics era)
+    {
+        var (_, ordered) = BuildOrdered(era);
+        var nonZero = ordered.Where(o => o.Value > 0).ToList();
+        return IEraComponentRule.ScoreMetric(nonZero, o => o.Value);
+    }
+
     public bool IsEligible(EraAnalytics era)
     {
         var (system, ordered) = BuildOrdered(era);
