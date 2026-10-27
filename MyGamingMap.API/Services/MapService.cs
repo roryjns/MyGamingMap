@@ -1,11 +1,16 @@
 using MyGamingMap.API.Models.DTOs;
 using MyGamingMap.API.Services.EraComponents;
+using MyGamingMap.API.Services.EraSummaries;
 
 namespace MyGamingMap.API.Services;
 
-public static class MapService
+public class MapService(IEraSummaryService summariser, ILogger<MapService> logger)
 {
-    public static Map GetMap(List<EnrichedPlayerGame> enrichedGames, List<EnrichedPlayerGame> distinctGames)
+    private readonly IEraSummaryService _summariser = summariser;
+    private readonly ILogger<MapService> _logger = logger;
+
+    public async Task<Map> GetMapAsync(List<EnrichedPlayerGame> enrichedGames, List<EnrichedPlayerGame> distinctGames,
+    CancellationToken ct = default)
     {
         var monthlyAnalytics = CalculateMonthlyAnalytics(enrichedGames);
 
@@ -55,13 +60,17 @@ public static class MapService
                 Eras =
                 [
                     new() {
-                        Start = normalized.Months[0],
-                        End   = normalized.Months[^1],
-                    }
+                Start = normalized.Months[0],
+                End   = normalized.Months[^1],
+            }
                 ]
             };
 
-            return singleEra;
+            var singleEraAnalytics = CalculateEraAnalytics(
+                singleEra, enrichedGames, distinctGames);
+
+            return await PopulateMapAsync(
+                singleEra, singleEraAnalytics, _summariser, _logger, ct);
         }
 
         if (nMonths <= 12) minEraMonths = 3;
@@ -70,7 +79,7 @@ public static class MapService
 
         var curve = new List<(int K, double Within, double Between, double CH, IReadOnlyList<int> Segs)>();
 
-        int maxK = Math.Min(9, nMonths / minEraMonths);
+        int maxK = Math.Min(8, nMonths / minEraMonths);
 
         for (int K = 2; K <= maxK; K++)
         {
@@ -124,6 +133,11 @@ public static class MapService
         //BoundaryAttribution.WriteTo(Console.Out, normalized, finalSegs, topN: 10);
         AnalyzeEras(normalized, finalSegs, enrichedGames);
 
+        FeatureMatrixDebugWriter.WriteCsv(matrix, "raw-matrix.csv");
+        FeatureMatrixDebugWriter.WriteCsv(pruned, "pruned-matrix.csv");
+        FeatureMatrixDebugWriter.WriteCsv(smoothed, "smoothed-matrix.csv");
+        FeatureMatrixDebugWriter.WriteCsv(normalized, "normalized-matrix.csv");
+
         // Build the list of era objects from the final segmentation
         var map = BuildMap(normalized, finalSegs);
 
@@ -131,8 +145,7 @@ public static class MapService
         var eraAnalytics = CalculateEraAnalytics(map, enrichedGames, distinctGames);
 
         // Determine map components (quiz questions etc) for each era based on the era analytics
-        map = PopulateMap(map, eraAnalytics);
-
+        map = await PopulateMapAsync(map, eraAnalytics, _summariser, _logger, ct);
         return map;
     }
 
@@ -626,7 +639,7 @@ public static class MapService
                 MergedGamesStarted = mergedGamesStarted,
                 TotalGamesPlayed = containedGames.Count,
                 UniqueGamesPlayed = EnrichedGameHelper.MergeByConceptId(containedGames).Count,
-                TotalHoursPlayed = containedGames.Sum(g => g.PlayerGame.PlayHours!.Value),
+                TotalHoursPlayed = gamesStartedInEra.Sum(g => g.PlayerGame.PlayHours!.Value),
                 TotalSessionsPlayed = containedGames
                     .Where(g => g.PlayerGame.PlayCount.HasValue)
                     .Sum(g => g.PlayerGame.PlayCount!.Value),
@@ -736,53 +749,93 @@ public static class MapService
             eraAnalytics.Add(ea);
         }
 
-        try
+#if DEBUG
         {
-            var json = System.Text.Json.JsonSerializer.Serialize(
-                eraAnalytics,
-                new System.Text.Json.JsonSerializerOptions
-                {
-                    WriteIndented = true,
-                    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-                });
+            try
+            {
+                var json = System.Text.Json.JsonSerializer.Serialize(
+                    eraAnalytics,
+                    new System.Text.Json.JsonSerializerOptions
+                    {
+                        WriteIndented = true,
+                        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+                    });
 
-            var path = Path.Combine(Directory.GetCurrentDirectory(), "eraAnalytics.json");
-            File.WriteAllText(path, json);
+                var path = Path.Combine(Directory.GetCurrentDirectory(), "era_analytics.json");
+                File.WriteAllText(path, json);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to write era analytics: {ex.Message}");
+            }
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Failed to write era analytics: {ex.Message}");
-        }
+#endif
 
         return eraAnalytics;
     }
 
-    private static Map PopulateMap(Map map, List<EraAnalytics> eraAnalytics)
+    private static async Task<Map> PopulateMapAsync(
+    Map map,
+    List<EraAnalytics> eraAnalytics,
+    IEraSummaryService summariser,
+    ILogger logger,
+    CancellationToken ct,
+    bool useLlm = true)
     {
-    var pairs = map.Eras
-        .Zip(eraAnalytics, (era, analytics) => (era, analytics))
-        .ToList();
+        var pairs = map.Eras
+            .Zip(eraAnalytics, (era, analytics) => (era, analytics))
+            .ToList();
 
-    var selected = EraComponentSelector.SelectDiverse(pairs);
+        var selected = EraComponentSelector.SelectDiverse(pairs);
 
-    // If the diversity pass returned nothing, fall back to per-era selection
-    // so the map isn't empty. Better to overfill than to render nothing.
-    if (selected.Count == 0)
-    {
-        Console.WriteLine("[PopulateMap] WARN: SelectDiverse returned 0, falling back");
-        foreach (var era in map.Eras)
-            era.Components = [];
+        if (selected.Count == 0)
+        {
+            logger.LogWarning("SelectDiverse returned 0, falling back to per-era selection");
+            foreach (var era in map.Eras)
+                era.Components = [];
+            foreach (var (era, analytics) in pairs)
+                era.Components = EraComponentSelector.Select(analytics);
+        }
+        else
+        {
+            foreach (var era in map.Eras)
+                era.Components = [];
+            foreach (var (era, component) in selected)
+                era.Components.Add(component);
+        }
+
+        if (!useLlm) return map;
+
+        // Build facts for every era
+        foreach (var (era, analytics) in pairs)
+            era.Facts = EraFactsBuilder.Build(analytics);
+
+        var factsList = pairs.Select(p => p.era.Facts!).ToList();
+
+        IReadOnlyList<(string Label, string Summary)?> results;
+        try
+        {
+            results = await summariser.SummariseAllAsync(factsList, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex,
+                "Batch summariser threw for {Count} eras; leaving them unsummarised",
+                factsList.Count);
+            results = Enumerable.Repeat<(string, string)?>(null, factsList.Count).ToList();
+        }
+
         for (var i = 0; i < pairs.Count; i++)
-            pairs[i].era.Components = EraComponentSelector.Select(pairs[i].analytics);
+        {
+            var (era, _) = pairs[i];
+
+            if (results[i] is { } r)
+            {
+                era.EraSummary.Label = r.Label;
+                era.EraSummary.Summary = r.Summary;
+            }
+        }
+
         return map;
-    }
-
-    foreach (var era in map.Eras)
-        era.Components = [];
-    foreach (var (era, component) in selected)
-        era.Components.Add(component);
-
-    // Annotate each era using a mini LLM with guard rails
-    return map;
     }
 }

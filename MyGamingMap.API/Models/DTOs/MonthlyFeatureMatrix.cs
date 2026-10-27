@@ -1,3 +1,7 @@
+using System.Globalization;
+using System.Text;
+using Microsoft.AspNetCore.Hosting; // for IWebHostEnvironment
+
 namespace MyGamingMap.API.Models.DTOs;
 
 public sealed class FeatureMatrix
@@ -5,6 +9,89 @@ public sealed class FeatureMatrix
     public required IReadOnlyList<DateTime> Months { get; init; }
     public required IReadOnlyList<string> FeatureNames { get; init; }
     public required double[][] Values { get; init; } // [monthIndex][featureIndex]
+}
+
+public static class FeatureMatrixDebugWriter
+{
+    public static string DebugRoot { get; set; } =
+        Path.Combine(Directory.GetCurrentDirectory(), "debug");
+
+    public static void WriteCsv(
+        FeatureMatrix matrix,
+        string fileName,
+        IReadOnlyList<int>? segmentStarts = null,
+        bool includeEraColumn = false)
+    {
+        var path = ResolvePath(fileName);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        ArgumentNullException.ThrowIfNull(matrix);
+        ArgumentNullException.ThrowIfNull(path);
+
+        var months = matrix.Months;
+        var names = matrix.FeatureNames;
+        var values = matrix.Values;
+
+        var nMonths = months.Count;
+        var nFeatures = names.Count;
+
+        // Build era index per month if segments provided.
+        int[]? eraOfMonth = null;
+        if (includeEraColumn && segmentStarts is { Count: > 0 })
+        {
+            eraOfMonth = new int[nMonths];
+            for (var k = 0; k < segmentStarts.Count; k++)
+            {
+                var start = segmentStarts[k];
+                var end = k + 1 < segmentStarts.Count ? segmentStarts[k + 1] : nMonths;
+                for (var m = start; m < end; m++) eraOfMonth[m] = k + 1; // 1-based
+            }
+        }
+
+        using var writer = new StreamWriter(path, append: false, Encoding.UTF8);
+
+        // Header
+        if (includeEraColumn)
+            writer.Write("Era,");
+
+        writer.Write("Month");
+
+        foreach (var name in names)
+        {
+            writer.Write(',');
+            writer.Write(Escape(name));
+        }
+        writer.WriteLine();
+
+        // Rows (one per month)
+        for (var m = 0; m < nMonths; m++)
+        {
+            if (includeEraColumn)
+            {
+                writer.Write(eraOfMonth?[m] ?? 0);
+                writer.Write(',');
+            }
+
+            writer.Write(months[m].ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+
+            var row = values[m];
+            for (var j = 0; j < nFeatures; j++)
+            {
+                writer.Write(',');
+                writer.Write(row[j].ToString("R", CultureInfo.InvariantCulture));
+            }
+            writer.WriteLine();
+        }
+    }
+
+    private static string Escape(string s) =>
+        s.Contains(',') || s.Contains('"') || s.Contains('\n')
+            ? "\"" + s.Replace("\"", "\"\"") + "\""
+            : s;
+
+    private static string ResolvePath(string fileName) =>
+        Path.IsPathRooted(fileName)
+            ? fileName
+            : Path.Combine(DebugRoot, fileName);
 }
 
 public sealed class FeatureMatrixBuilder
@@ -249,7 +336,7 @@ public sealed class PruningReport
 
         writer.WriteLine();
     }
-    
+
     private static string SplitDimension(string featureName)
     {
         var idx = featureName.IndexOf(':');

@@ -120,9 +120,7 @@ psnAuthCache.json
 # Generated application data
 # ==========================================
 
-# Generated PSN data
-output/
-psn-service/debug/
+debug/
 
 # Pipeline outputs — regenerated from source data.
 # These contain enriched game lists and era analytics derived

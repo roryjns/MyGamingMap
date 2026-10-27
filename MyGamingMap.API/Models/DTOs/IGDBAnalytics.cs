@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace MyGamingMap.API.Models.DTOs;
 
 public class IGDBAnalytics
@@ -126,7 +128,7 @@ public class TierList
 
 public class ReviewRatingTier : CategoryAnalytic
 {
-    public List<EnrichedPlayerGame> Games { get; set; } = [];
+    [JsonIgnore] public List<EnrichedPlayerGame> Games { get; set; } = [];
 }
 
 public class ReleaseGapGame

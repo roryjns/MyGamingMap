@@ -5,13 +5,13 @@ using MyGamingMap.API.Exceptions;
 
 namespace MyGamingMap.API.Services;
 
-public class PlayerService(PSNService psnService, IGDBService igdbService, AnalyticsService analyticsService)
+public class PlayerService(PSNService psnService, IGDBService igdbService, MapService mapService)
 {
     private readonly PSNService psnService = psnService;
     private readonly IGDBService igdbService = igdbService;
-    private readonly AnalyticsService analyticsService = analyticsService;
+    private readonly MapService mapService = mapService;
 
-    public async Task<Analytics?> GetAnalytics(string username)
+    public async Task<Analytics?> GetAnalytics(string username, CancellationToken ct = default)
     {
         var totalStopwatch = Stopwatch.StartNew();
 
@@ -30,23 +30,42 @@ public class PlayerService(PSNService psnService, IGDBService igdbService, Analy
         stopwatch.Stop();
         Console.WriteLine($"IGDBService.GetIGDBGames: {stopwatch.ElapsedMilliseconds} ms");
 
-        stopwatch.Restart();
-        var analytics = await analyticsService.GenerateAnalytics(enrichedGames);
-        stopwatch.Stop();
-        Console.WriteLine($"AnalyticsService.GenerateAnalytics: {stopwatch.ElapsedMilliseconds} ms");
+        var distinctGames = EnrichedGameHelper.MergeByConceptId(enrichedGames);
 
-        //stopwatch.Restart();
-        //var map = await mapService.GenerateMap(analytics);
-        //stopwatch.Stop();
-        //Console.WriteLine($"MapService.GenerateMap: {stopwatch.ElapsedMilliseconds} ms");
+        // Start the tier list computation before awaiting the map.
+        // CalculateReviewRatingAnalytics is synchronous, so wrap in Task.Run
+        // to move it off the request thread and run it concurrently with
+        // the map's async LLM work.
+        var tierListTask = Task.Run(() =>
+            IGDBAnalyticsService
+                .CalculateReviewRatingAnalytics(enrichedGames)
+                .TierList,
+            ct);
+
+        // Map runs asynchronously; its LLM calls dominate the wait time.
+        stopwatch.Restart();
+        var map = await mapService.GetMapAsync(enrichedGames, distinctGames, ct);
+        stopwatch.Stop();
+        Console.WriteLine($"MapService.GetMapAsync: {stopwatch.ElapsedMilliseconds} ms");
+
+        // Tier list should already be complete (or nearly so) by now.
+        stopwatch.Restart();
+        var tierList = await tierListTask;
+        stopwatch.Stop();
+        Console.WriteLine($"TierList wait: {stopwatch.ElapsedMilliseconds} ms");
+
+        var analytics = new Analytics
+        {
+            Map = map,
+            TierList = tierList,
+        };
 
         totalStopwatch.Stop();
-        Console.WriteLine($"Total GetMap execution: {totalStopwatch.ElapsedMilliseconds} ms");
+        Console.WriteLine($"Total GetAnalytics execution: {totalStopwatch.ElapsedMilliseconds} ms");
         return analytics;
-        //return map;
     }
 
-    public async Task<Map> GetMap(string username)
+    public async Task<Map> GetMapAsync(string username, CancellationToken ct = default)
     {
         var playerResult = await psnService.GetPlayerGames(username);
 
@@ -60,7 +79,7 @@ public class PlayerService(PSNService psnService, IGDBService igdbService, Analy
         var distinctGames = EnrichedGameHelper.MergeByConceptId(enrichedGames);
 
         var stopwatch = Stopwatch.StartNew();
-        var map = MapService.GetMap(enrichedGames, distinctGames);
+        var map = await mapService.GetMapAsync(enrichedGames, distinctGames, ct);
         stopwatch.Stop();
         Console.WriteLine($"Total GetMap execution: {stopwatch.ElapsedMilliseconds} ms");
 

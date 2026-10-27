@@ -1,6 +1,9 @@
 using MyGamingMap.API.Services;
 using MyGamingMap.API.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
+using OpenAI;
+using MyGamingMap.API.Services.EraSummaries;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,7 +18,7 @@ builder.Services.AddScoped<PlayerService>();
 builder.Services.AddScoped<PSNService>();
 builder.Services.AddScoped<IGDBService>();
 builder.Services.AddScoped<DatabaseService>();
-builder.Services.AddScoped<AnalyticsService>();
+builder.Services.AddScoped<MapService>();
 builder.Services.AddSingleton<RateLimiter>();
 
 builder.Services.AddDbContext<MyGamingMapContext>(options =>
@@ -36,6 +39,21 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod();
     });
 });
+
+builder.Services.AddMemoryCache();
+
+builder.Services.AddSingleton<IChatClient>(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var model = config["OpenAI:Model"] ?? "gpt-4.1-nano";
+
+    return new OpenAIClient(config["OpenAI:ApiKey"]
+            ?? throw new InvalidOperationException("OpenAI:ApiKey is not configured."))
+        .GetChatClient(model)
+        .AsIChatClient();
+});
+
+builder.Services.AddSingleton<IEraSummaryService, LlmEraSummaryService>();
 
 var app = builder.Build();
 

@@ -55,7 +55,7 @@ public class PlayerController(PlayerService playerService, RateLimiter rateLimit
     }
 
     [HttpGet("{username}/map")]
-    public async Task<IActionResult> GetMap(string username)
+    public async Task<IActionResult> GetMapAsync(string username)
     {
         username = username.Trim().ToLowerInvariant();
 
@@ -89,7 +89,7 @@ public class PlayerController(PlayerService playerService, RateLimiter rateLimit
                 });
             }
 
-            return await Execute(() => playerService.GetMap(username));
+            return await Execute(() => playerService.GetMapAsync(username, HttpContext.RequestAborted));
         }
         finally
         {

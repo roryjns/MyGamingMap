@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
-using MyGamingMap.API.Services.EraComponents.Rules;
+using MyGamingMap.API.Services.EraSummaries;
 
 namespace MyGamingMap.API.Models.DTOs;
 
@@ -15,13 +15,14 @@ public class Era
     public required DateTime Start { get; init; }
     public required DateTime End { get; init; }
     public int MonthCount { get; set; }  // Used to scale size of era node
-    public string Label { get; set; } = "";
+    [JsonIgnore] public EraFacts? Facts { get; set; }
     public EraSummary EraSummary { get; set; } = new();
-    public List<EraComponent> Components { get; set; } = [];
+    [JsonIgnore] public List<EraComponent> Components { get; set; } = [];
 }
 
 public class EraSummary
 {
+    public string Label { get; set; } = "";
     public string Summary { get; set; } = "";
     public List<EnrichedPlayerGame> Top3Games { get; set; } = [];
     public List<string> Top2Genres { get; set; } = [];
